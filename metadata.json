@@ -1,0 +1,6 @@
+{
+  "name": "Patient Case-Taking Software",
+  "description": "Desktop-based Java Swing & MySQL Patient Case-Taking Software with interactive desktop preview and complete MVC academic project source code.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
