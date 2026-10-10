@@ -67,7 +67,7 @@ public class LoginFrame extends JFrame {
         txtPassword = new JPasswordField("doctor123", 16);
         txtPassword.setFont(UITheme.FONT_BODY);
 
-        cmbRole = new JComboBox<>(new String[]{"DOCTOR", "ADMIN"});
+        cmbRole = new JComboBox<>(new String[]{"Doctor", "Nurse", "Receptionist", "Admin"});
         cmbRole.setFont(UITheme.FONT_BODY);
 
         gbc.gridx = 0; gbc.gridy = 0;
@@ -102,7 +102,7 @@ public class LoginFrame extends JFrame {
         root.add(centerWrapper, BorderLayout.CENTER);
 
         // Footer
-        JLabel lblFooter = new JLabel("Default: doctor / doctor123 | admin / admin123", JLabel.CENTER);
+        JLabel lblFooter = new JLabel("Default: doctor/doctor123 | nurse/nurse123 | receptionist/recep123 | admin/admin123", JLabel.CENTER);
         lblFooter.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         lblFooter.setForeground(UITheme.TEXT_MUTED);
         lblFooter.setBorder(new EmptyBorder(0, 0, 15, 0));

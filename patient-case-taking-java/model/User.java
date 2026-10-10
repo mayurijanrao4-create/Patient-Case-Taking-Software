@@ -44,6 +44,22 @@ public class User {
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
 
+    public boolean isDoctor() {
+        return "Doctor".equalsIgnoreCase(role);
+    }
+
+    public boolean isNurse() {
+        return "Nurse".equalsIgnoreCase(role);
+    }
+
+    public boolean isReceptionist() {
+        return "Receptionist".equalsIgnoreCase(role);
+    }
+
+    public boolean isAdmin() {
+        return "Admin".equalsIgnoreCase(role);
+    }
+
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
 

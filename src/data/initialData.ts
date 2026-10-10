@@ -24,6 +24,22 @@ export const INITIAL_USERS: User[] = [
     fullName: 'Dr. Rajesh Kumar (M.B.B.S, D.N.B)',
     role: 'Doctor',
     email: 'dr.kumar@hospital.org'
+  },
+  {
+    userId: 4,
+    username: 'nurse',
+    password: 'nurse123',
+    fullName: 'Nurse Mary Davis (RN, Head Nurse)',
+    role: 'Nurse',
+    email: 'nurse.mary@hospital.org'
+  },
+  {
+    userId: 5,
+    username: 'receptionist',
+    password: 'recep123',
+    fullName: 'Receptionist David Miller (Front Desk)',
+    role: 'Receptionist',
+    email: 'recep.david@hospital.org'
   }
 ];
 

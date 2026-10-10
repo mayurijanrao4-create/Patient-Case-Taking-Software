@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   User,
+  UserRole,
   Patient,
   CaseHistory,
   Examination,
@@ -85,7 +86,12 @@ import {
   Archive,
   GitCompare,
   FolderOpen,
-  Edit3
+  Edit3,
+  Lock,
+  HelpCircle,
+  Info,
+  X,
+  Zap
 } from 'lucide-react';
 
 export type ModuleType =
@@ -125,11 +131,11 @@ const FrameWrapper: React.FC<FrameWrapperProps> = ({
 }) => {
   if (deviceMode === 'iphone') {
     return (
-      <div className="py-8 px-2 bg-slate-950 flex-1 flex flex-col items-center justify-center min-h-[880px]">
+      <div className="py-2 sm:py-8 px-1 sm:px-2 bg-slate-950 flex-1 flex flex-col items-center justify-center min-h-0 w-full">
         {/* iPhone 15 Pro Hardware Frame */}
-        <div className="w-full max-w-[420px] rounded-[52px] p-3.5 bg-gradient-to-b from-slate-700 via-slate-800 to-slate-900 shadow-2xl border-4 border-slate-600/80 relative ring-1 ring-slate-500/30">
+        <div className="w-full max-w-[420px] rounded-2xl sm:rounded-[52px] p-2 sm:p-3.5 bg-gradient-to-b from-slate-700 via-slate-800 to-slate-900 shadow-2xl border-2 sm:border-4 border-slate-600/80 relative ring-1 ring-slate-500/30">
           {/* Screen Viewport */}
-          <div className="rounded-[40px] overflow-hidden bg-slate-100 flex flex-col h-[780px] shadow-inner relative border border-slate-950/40">
+          <div className="rounded-xl sm:rounded-[40px] overflow-hidden bg-slate-100 flex flex-col h-[calc(100vh-200px)] sm:h-[780px] max-h-[820px] shadow-inner relative border border-slate-950/40">
             {/* Dynamic Island & iOS Status Bar */}
             <div className="bg-slate-900 text-white pt-2.5 px-6 pb-2 select-none relative z-30">
               <div className="flex items-center justify-between text-[11px] font-semibold tracking-tight">
@@ -256,7 +262,7 @@ const FrameWrapper: React.FC<FrameWrapperProps> = ({
 
   return (
     <>
-      <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto pb-16 sm:pb-6">
+      <main className="flex-1 p-3 sm:p-5 md:p-6 max-w-7xl w-full mx-auto pb-20 sm:pb-8 overflow-x-hidden">
         {children}
       </main>
 
@@ -332,10 +338,56 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(INITIAL_USERS[1]); // Dr. Sarah Jenkins logged in by default for instant preview
   const [loginUsername, setLoginUsername] = useState('doctor');
   const [loginPassword, setLoginPassword] = useState('doctor123');
-  const [loginRole, setLoginRole] = useState<'Doctor' | 'Admin'>('Doctor');
+  const [loginRole, setLoginRole] = useState<UserRole>('Doctor');
+
+  // Role-Based Access Control (RBAC) Permissions:
+  // Available Roles: Doctor, Nurse, Receptionist, Admin
+  const currentRole: UserRole = currentUser?.role || 'Doctor';
+  const isDoctor = currentRole === 'Doctor' || currentRole === 'Admin';
+  const isNurse = currentRole === 'Nurse';
+  const isReceptionist = currentRole === 'Receptionist';
+
+  // Specific Role Permissions:
+  // Doctor:
+  // - Can view patient details & case history
+  // - Can manage examination details, diagnosis, prescriptions, follow-up
+  // Nurse:
+  // - Can view relevant patient info & case history
+  // - Can update information required for nursing work (vitals, observations, routine checkups, ward notes)
+  // - Cannot edit diagnosis (read-only)
+  // - Cannot edit prescriptions (read-only)
+  // - Cannot edit other doctor-only clinical information
+  // Receptionist:
+  // - Can manage patient registration & view/update basic demographic info
+  // - Can manage appointment/registration-related information
+  // - Cannot edit examination, diagnosis or prescription information
+  const canManageRegistration = isReceptionist || isDoctor;
+  const canEditDemographics = true; // All authenticated hospital roles can view and update basic demographic info
+  const canManageExamination = isDoctor || isNurse; // Nurse manages nursing vitals/survey; Receptionist cannot
+  const canManageDiagnosis = isDoctor; // Doctor only; Nurse & Receptionist read-only
+  const canManagePrescription = isDoctor; // Doctor only; Nurse & Receptionist read-only
+  const canManageFollowUp = isDoctor || isNurse || isReceptionist; // Follow-up dates/appointments
+  const canManageClinicalEncounter = isDoctor || isNurse; // Clinical case entry
+
+  const handleSelectRolePreset = (role: UserRole) => {
+    setLoginRole(role);
+    if (role === 'Doctor') {
+      setLoginUsername('doctor');
+      setLoginPassword('doctor123');
+    } else if (role === 'Nurse') {
+      setLoginUsername('nurse');
+      setLoginPassword('nurse123');
+    } else if (role === 'Receptionist') {
+      setLoginUsername('receptionist');
+      setLoginPassword('recep123');
+    } else if (role === 'Admin') {
+      setLoginUsername('admin');
+      setLoginPassword('admin123');
+    }
+  };
 
   // Device Display Mode (Desktop Workstation, iPhone 15 Pro, Fluid Responsive)
-  const [deviceMode, setDeviceMode] = useState<'desktop' | 'iphone' | 'fluid'>('desktop');
+  const [deviceMode, setDeviceMode] = useState<'desktop' | 'iphone' | 'fluid'>('fluid');
 
   // Active module
   const [activeModule, setActiveModule] = useState<ModuleType>('dashboard');
@@ -363,6 +415,46 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
   const [isDbStatusOpen, setIsDbStatusOpen] = useState<boolean>(false);
   const [patientArchiveFilter, setPatientArchiveFilter] = useState<'ACTIVE' | 'ARCHIVED' | 'ALL'>('ACTIVE');
 
+  // User-Friendly Notification Toasts
+  const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'success' | 'info' | 'warning' | 'error' }>>([]);
+  const showToast = (message: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 3500);
+  };
+  const dismissToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // User-Friendly Global Spotlight Search & Help Modals
+  const [isSpotlightOpen, setIsSpotlightOpen] = useState(false);
+  const [spotlightQuery, setSpotlightQuery] = useState('');
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
+
+  // Global Keyboard Shortcuts (Ctrl+K or / for search, Esc to close modals)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSpotlightOpen((prev) => !prev);
+      }
+      if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes((document.activeElement?.tagName || ''))) {
+        e.preventDefault();
+        setIsSpotlightOpen(true);
+      }
+      if (e.key === 'Escape') {
+        setIsSpotlightOpen(false);
+        setIsHelpOpen(false);
+        setIsRoleSwitcherOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   // Audit Log recording helper
   const logAuditEvent = (
     action: string,
@@ -374,7 +466,7 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
       logId: auditLogs.length + 1,
       userId: currentUser ? currentUser.userId : 2,
       userName: currentUser?.fullName || 'Dr. Sarah Jenkins',
-      userRole: currentUser?.role === 'Admin' ? 'Admin' : 'Doctor',
+      userRole: (currentUser?.role as any) || 'Doctor',
       action,
       tableName,
       recordId,
@@ -473,9 +565,15 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
     if (found) {
       setCurrentUser(found);
       setActiveModule('dashboard');
-      showJOptionPane('Login Successful', `Welcome back, ${found.fullName}!`, 'info');
+      logAuditEvent(
+        'LOGIN',
+        'users',
+        String(found.userId),
+        `Staff login successful: ${found.fullName} (${found.role})`
+      );
+      showJOptionPane('Login Successful', `Welcome, ${found.fullName}!\nAuthenticated Role: ${found.role}`, 'info');
     } else {
-      showJOptionPane('Authentication Failed', 'Invalid username, password, or role combination. Please verify credentials.', 'error');
+      showJOptionPane('Authentication Failed', `Invalid username, password, or role combination for '${loginUsername.trim()}'. Please verify that the selected role matches this staff account.`, 'error');
     }
   };
 
@@ -820,6 +918,31 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
     setRegAdmissionType('OPD');
   };
 
+  const handleFillDemoPatient = () => {
+    const demoProfiles = [
+      { name: 'Dr. Vikram Malhotra', age: '38', gender: 'Male' as const, blood: 'B+', mobile: '9820145672', address: 'B-402 Whispering Palms, Bandra West, Mumbai', condition: 'Essential Hypertension' },
+      { name: 'Ananya Deshmukh', age: '29', gender: 'Female' as const, blood: 'O+', mobile: '9833412567', address: 'Flat 12, Gulmohar Enclave, Shivaji Park, Mumbai', condition: 'Type 1 Diabetes Mellitus' },
+      { name: 'Rajesh Nair', age: '54', gender: 'Male' as const, blood: 'A+', mobile: '9845012389', address: '18 Seaside Villa, Worli Sea Face, Mumbai', condition: 'Post-CABG Cardiac Rehab' },
+      { name: 'Pooja Sundaram', age: '41', gender: 'Female' as const, blood: 'AB+', mobile: '9876541230', address: '701 Green Meadows, Powai, Mumbai', condition: 'Bronchial Asthma' }
+    ];
+    const pick = demoProfiles[Math.floor(Math.random() * demoProfiles.length)];
+    const nextId = `PAT-${1000 + patients.length + 1}`;
+    setRegPatientId(nextId);
+    setRegName(pick.name);
+    setRegAge(pick.age);
+    setRegGender(pick.gender);
+    setRegBloodGroup(pick.blood);
+    setRegMobile(pick.mobile);
+    setRegAddress(pick.address);
+    setRegAdmissionType('IPD');
+    setRegAdmissionReason(`Admitted for clinical monitoring and evaluation of ${pick.condition}`);
+    setRegHasRoutineCheckup(true);
+    setRegCheckupFrequency('Weekly');
+    setRegPreferredDay('Monday');
+    setRegRoutineCondition(pick.condition);
+    showToast(`Sample profile for "${pick.name}" filled! Ready to save to database.`, 'info');
+  };
+
   // ----------------------------------------------------
   // MODULE 3: PATIENT MANAGEMENT & SEARCH STATE
   // ----------------------------------------------------
@@ -1020,6 +1143,138 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
     (isPrescriptionComplete ? 20 : 0) +
     (isFollowUpComplete ? 20 : 0);
 
+  // User-Friendly Clinical Presets (Quick Autofill for common cases)
+  const CLINICAL_PRESETS = [
+    {
+      name: 'Viral Bronchitis',
+      chiefComplaint: 'Persistent dry cough, mild fever, sore throat',
+      symptoms: 'Non-productive cough, low-grade fever, rhinorrhea, malaise',
+      duration: '4 days',
+      pastHistory: 'No chronic respiratory illnesses',
+      allergy: 'NKDA (No Known Drug Allergies)',
+      temp: '99.4 F',
+      bp: '118/76 mmHg',
+      pulse: '80 bpm',
+      weight: '68 kg',
+      height: '172 cm',
+      observation: 'Throat mildly erythematous; chest clear on auscultation, no wheezes or crackles.',
+      diagnosis: 'Acute Viral Bronchitis (J20.9)',
+      notes: 'Supportive symptomatic therapy; maintain warm fluid hydration; steam inhalation twice daily.',
+      medicines: [
+        { medicineName: 'Tab. Paracetamol 650mg', dosage: '1 Tablet', frequency: '1-0-1 (Twice daily)', duration: '5 days', instructions: 'After meals for fever/bodyache' },
+        { medicineName: 'Syp. Dextromethorphan (10mg/5ml)', dosage: '10 ml', frequency: '1-1-1 (Thrice daily)', duration: '5 days', instructions: 'Take with warm water before bed' },
+        { medicineName: 'Tab. Cetirizine 10mg', dosage: '1 Tablet', frequency: '0-0-1 (At night)', duration: '5 days', instructions: 'May cause mild drowsiness' }
+      ],
+      followUpDays: '2026-10-12',
+      followUpNotes: 'Return if fever spikes above 101F, dyspnea develops, or cough persists >10 days.'
+    },
+    {
+      name: 'Type 2 Diabetes Review',
+      chiefComplaint: 'Routine quarterly diabetic follow-up and prescription refill',
+      symptoms: 'Mild afternoon fatigue; no polyuria, polydipsia, or blurred vision',
+      duration: '3 months',
+      pastHistory: 'Type 2 Diabetes Mellitus x 4 years, controlled on oral hypoglycemics',
+      allergy: 'Penicillin allergy (skin rash)',
+      temp: '98.4 F',
+      bp: '124/82 mmHg',
+      pulse: '74 bpm',
+      weight: '74 kg',
+      height: '168 cm',
+      observation: 'Bipedal pulses intact; bilateral feet sensation intact on monofilament test; no ulcers.',
+      diagnosis: 'Type 2 Diabetes Mellitus without complications (E11.9)',
+      notes: 'Continue lifestyle modifications and daily 30-min walking. HbA1c scheduled.',
+      medicines: [
+        { medicineName: 'Tab. Metformin 500mg SR', dosage: '1 Tablet', frequency: '1-0-1 (Twice daily)', duration: '30 days', instructions: 'Take with or immediately after meals' },
+        { medicineName: 'Tab. Glimepiride 1mg', dosage: '1 Tablet', frequency: '1-0-0 (Morning)', duration: '30 days', instructions: 'Take 15 mins before breakfast' }
+      ],
+      followUpDays: '2026-11-05',
+      followUpNotes: 'Bring fasting and post-prandial blood sugar logbook + HbA1c lab report.'
+    },
+    {
+      name: 'Hypertension Assessment',
+      chiefComplaint: 'Occipital morning headache, routine blood pressure review',
+      symptoms: 'Morning heaviness in head; no chest pain, palpitation, or dizziness',
+      duration: '1 week',
+      pastHistory: 'Primary Essential Hypertension diagnosed 2 years ago',
+      allergy: 'NKDA',
+      temp: '98.6 F',
+      bp: '142/90 mmHg',
+      pulse: '76 bpm',
+      weight: '78 kg',
+      height: '175 cm',
+      observation: 'S1, S2 audible; no pedal edema; lungs clear to auscultation.',
+      diagnosis: 'Primary Essential Hypertension (I10)',
+      notes: 'Low sodium DASH diet advised. Regular home BP monitoring twice a week.',
+      medicines: [
+        { medicineName: 'Tab. Telmisartan 40mg', dosage: '1 Tablet', frequency: '1-0-0 (Morning)', duration: '30 days', instructions: 'Take with glass of water upon waking' },
+        { medicineName: 'Tab. Amlodipine 5mg', dosage: '1 Tablet', frequency: '0-0-1 (Evening)', duration: '30 days', instructions: 'Evening post dinner' }
+      ],
+      followUpDays: '2026-10-19',
+      followUpNotes: 'Repeat BP check; bring 7-day home blood pressure charting.'
+    },
+    {
+      name: 'Acute Gastroenteritis',
+      chiefComplaint: 'Watery loose motions, abdominal cramping, mild nausea',
+      symptoms: '4-5 episodes of watery stools, nausea, mild low-grade fever, weakness',
+      duration: '2 days',
+      pastHistory: 'Ate outside street food 36 hours prior',
+      allergy: 'NKDA',
+      temp: '99.0 F',
+      bp: '110/70 mmHg',
+      pulse: '84 bpm',
+      weight: '64 kg',
+      height: '165 cm',
+      observation: 'Tongue mildly dry; abdomen soft, mild diffuse peri-umbilical tenderness, bowel sounds active.',
+      diagnosis: 'Acute Gastroenteritis, likely infectious (A09)',
+      notes: 'Oral rehydration salts (ORS) 2-3 liters/day; light bland khichdi/banana diet; no dairy.',
+      medicines: [
+        { medicineName: 'Tab. Ofloxacin 200mg + Ornidazole 500mg', dosage: '1 Tablet', frequency: '1-0-1 (Twice daily)', duration: '5 days', instructions: 'Take strictly after meals' },
+        { medicineName: 'Sachet ORS Electrolyte Powder', dosage: '1 Sachet in 1L boiled water', frequency: 'As needed', duration: '3 days', instructions: 'Sip continuously after every loose motion' },
+        { medicineName: 'Cap. Lactic Acid Bacillus (Probiotic)', dosage: '1 Capsule', frequency: '1-0-1', duration: '5 days', instructions: 'Between meals' }
+      ],
+      followUpDays: '2026-10-08',
+      followUpNotes: 'Emergency review if unable to retain fluids, high fever, or blood in stool.'
+    }
+  ];
+
+  const handleApplyClinicalPreset = (presetIndex: number) => {
+    const preset = CLINICAL_PRESETS[presetIndex];
+    if (!preset) return;
+    setCaseChiefComplaint(preset.chiefComplaint);
+    setCaseSymptoms(preset.symptoms);
+    setCaseDuration(preset.duration);
+    setCasePastHistory(preset.pastHistory);
+    setCaseAllergy(preset.allergy);
+    setExamTemp(preset.temp);
+    setExamBP(preset.bp);
+    setExamPulse(preset.pulse);
+    setExamWeight(preset.weight);
+    setExamHeight(preset.height);
+    setExamObservation(preset.observation);
+    setDiagText(preset.diagnosis);
+    setDiagNotes(preset.notes);
+    setMedItems(preset.medicines);
+    setFollowUpDate(preset.followUpDays);
+    setFollowUpNotes(preset.followUpNotes);
+    setFollowUpStatus('Scheduled');
+    showToast(`Loaded clinical preset: "${preset.name}". You can adjust any field.`, 'info');
+  };
+
+  const handleResetCaseForm = () => {
+    setCaseChiefComplaint('');
+    setCaseSymptoms('');
+    setCaseDuration('');
+    setCasePastHistory('');
+    setCaseAllergy('');
+    setCaseFamilyHistory('');
+    setCaseCurrentMedication('');
+    setExamObservation('');
+    setDiagText('');
+    setDiagNotes('');
+    setMedItems([]);
+    showToast('Case documentation fields cleared.', 'info');
+  };
+
   const handleAddMedicine = () => {
     if (!newMedName.trim()) {
       showJOptionPane('Prescription Warning', 'Please provide a Medicine Name before adding to prescription list!', 'warning');
@@ -1041,6 +1296,31 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
 
   const handleRemoveMedicine = (index: number) => {
     setMedItems(medItems.filter((_, i) => i !== index));
+  };
+
+  const QUICK_MEDICINES = [
+    { name: 'Tab. Paracetamol 650mg', dosage: '1 Tablet', freq: '1-0-1 (Twice daily)', duration: '5 days', instructions: 'After meals for fever/pain' },
+    { name: 'Cap. Amoxicillin 500mg', dosage: '1 Capsule', freq: '1-1-1 (Thrice daily)', duration: '7 days', instructions: 'After meals with water' },
+    { name: 'Cap. Omeprazole 20mg', dosage: '1 Capsule', freq: '1-0-0 (Morning)', duration: '14 days', instructions: '30 mins before breakfast' },
+    { name: 'Tab. Cetirizine 10mg', dosage: '1 Tablet', freq: '0-0-1 (Night)', duration: '5 days', instructions: 'At bedtime' },
+    { name: 'Tab. Metformin 500mg SR', dosage: '1 Tablet', freq: '1-0-1 (Twice daily)', duration: '30 days', instructions: 'With meals' },
+    { name: 'Tab. Amlodipine 5mg', dosage: '1 Tablet', freq: '1-0-0 (Morning)', duration: '30 days', instructions: 'Morning after food' },
+    { name: 'Tab. Azithromycin 500mg', dosage: '1 Tablet', freq: '1-0-0 (Once daily)', duration: '3 days', instructions: '1 hr before meals' },
+    { name: 'Tab. Ibuprofen 400mg', dosage: '1 Tablet', freq: '1-0-1 (Twice daily)', duration: '3 days', instructions: 'After meals for analgesia' }
+  ];
+
+  const handleQuickAddMedicine = (med: typeof QUICK_MEDICINES[0]) => {
+    setMedItems((prev) => [
+      ...prev,
+      {
+        medicineName: med.name,
+        dosage: med.dosage,
+        frequency: med.freq,
+        duration: med.duration,
+        instructions: med.instructions
+      }
+    ]);
+    showToast(`Added ${med.name} to prescription list`, 'success');
   };
 
   const handleStartEditCase = (caseIdToEdit: number) => {
@@ -1134,6 +1414,15 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
   const handleSaveCompleteCase = (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isReceptionist) {
+      showJOptionPane(
+        'Action Restricted',
+        'Receptionist role has read-only access to clinical examination and treatment records. Please use Patient Registration or Directory modules for demographic work.',
+        'warning'
+      );
+      return;
+    }
+
     // Validations
     if (!casePatientId.trim()) {
       showJOptionPane('Validation Error', 'Please choose a valid registered Patient ID!', 'warning');
@@ -1152,12 +1441,13 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
       showJOptionPane('Validation Error', 'Symptoms description cannot be empty!', 'warning');
       return;
     }
-    if (!diagText.trim()) {
-      showJOptionPane('Validation Error', 'Clinical Diagnosis cannot be empty!', 'warning');
+    // Diagnosis & Prescription are doctor-only requirements
+    if (isDoctor && !diagText.trim()) {
+      showJOptionPane('Validation Error', 'Clinical Diagnosis cannot be empty for Doctor record!', 'warning');
       return;
     }
-    if (medItems.length === 0) {
-      showJOptionPane('Validation Error', 'Prescription must contain at least one medicine item!', 'warning');
+    if (isDoctor && medItems.length === 0) {
+      showJOptionPane('Validation Error', 'Prescription must contain at least one medicine item for Doctor record!', 'warning');
       return;
     }
 
@@ -1224,8 +1514,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
             d.caseId === editingCaseId
               ? {
                   ...d,
-                  diagnosisText: diagText,
-                  doctorNotes: diagNotes || d.doctorNotes,
+                  diagnosisText: canManageDiagnosis ? (diagText || d.diagnosisText) : d.diagnosisText,
+                  doctorNotes: canManageDiagnosis ? (diagNotes || d.doctorNotes) : d.doctorNotes,
                   diagnosisDate: caseVisitDate
                 }
               : d
@@ -1236,44 +1526,46 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
           {
             diagnosisId: 300 + prev.length + 1,
             caseId: editingCaseId,
-            diagnosisText: diagText,
-            doctorNotes: diagNotes || 'Clinical assessment notes recorded.',
+            diagnosisText: diagText || 'Pending Attending Physician Evaluation',
+            doctorNotes: diagNotes || 'Nursing intake vitals recorded.',
             diagnosisDate: caseVisitDate
           }
         ];
       });
 
-      setPrescriptions((prev) => {
-        const existing = prev.find((p) => p.caseId === editingCaseId);
-        const pId = existing ? existing.prescriptionId : 400 + prev.length + 1;
-        const updatedMeds: PrescriptionMedicine[] = medItems.map((m, idx) => ({
-          itemId: 500 + pId * 10 + idx,
-          prescriptionId: pId,
-          ...m
-        }));
-
-        if (existing) {
-          return prev.map((p) =>
-            p.caseId === editingCaseId
-              ? {
-                  ...p,
-                  prescriptionDate: caseVisitDate,
-                  medicines: updatedMeds
-                }
-              : p
-          );
-        }
-        return [
-          ...prev,
-          {
+      if (canManagePrescription) {
+        setPrescriptions((prev) => {
+          const existing = prev.find((p) => p.caseId === editingCaseId);
+          const pId = existing ? existing.prescriptionId : 400 + prev.length + 1;
+          const updatedMeds: PrescriptionMedicine[] = medItems.map((m, idx) => ({
+            itemId: 500 + pId * 10 + idx,
             prescriptionId: pId,
-            caseId: editingCaseId,
-            prescriptionDate: caseVisitDate,
-            doctorNotes: 'Take medicines regularly with warm water.',
-            medicines: updatedMeds
+            ...m
+          }));
+
+          if (existing) {
+            return prev.map((p) =>
+              p.caseId === editingCaseId
+                ? {
+                    ...p,
+                    prescriptionDate: caseVisitDate,
+                    medicines: updatedMeds
+                  }
+                : p
+            );
           }
-        ];
-      });
+          return [
+            ...prev,
+            {
+              prescriptionId: pId,
+              caseId: editingCaseId,
+              prescriptionDate: caseVisitDate,
+              doctorNotes: 'Take medicines regularly with warm water.',
+              medicines: updatedMeds
+            }
+          ];
+        });
+      }
 
       setFollowups((prev) => {
         const exists = prev.some((f) => f.caseId === editingCaseId);
@@ -1625,22 +1917,47 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
       {/* Top Application Bar - Styled as Authentic Swing / Java Window */}
       <header className="bg-slate-800 text-slate-100 border-b border-slate-700 select-none">
         {/* Window Title Bar */}
-        <div className="flex items-center justify-between px-4 py-1.5 bg-slate-900 border-b border-slate-800 text-xs">
-          <div className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block shadow-sm"></span>
-            <span className="font-semibold text-slate-200 tracking-wide">
-              Patient Case-Taking Software [Java Swing Desktop v3.4 | MySQL JDBC | MVC]
+        <div className="flex items-center justify-between px-3 sm:px-4 py-1.5 bg-slate-900 border-b border-slate-800 text-xs gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 inline-block shadow-sm shrink-0"></span>
+            <span className="font-semibold text-slate-200 tracking-wide truncate text-[11px] sm:text-xs">
+              Patient Case-Taking Software
+              <span className="hidden md:inline"> — Clinical Workstation</span>
             </span>
           </div>
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+            {/* User-Friendly Quick Search (Ctrl+K) */}
+            <button
+              onClick={() => setIsSpotlightOpen(true)}
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 text-[11px] transition shadow-xs"
+              title="Search patients or medications (Ctrl+K)"
+            >
+              <Search className="w-3.5 h-3.5 text-sky-400" />
+              <span className="hidden sm:inline">Search</span>
+              <kbd className="hidden md:inline px-1 py-0.2 bg-slate-900 text-slate-400 rounded text-[9px] font-mono border border-slate-700">
+                Ctrl+K
+              </kbd>
+            </button>
+
+            {/* Quick Help & Shortcuts */}
+            <button
+              onClick={() => setIsHelpOpen(true)}
+              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition"
+              title="User Guide & System Shortcuts"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-sky-400" />
+            </button>
+
             <button
               onClick={() => setIsDbStatusOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 text-[11px] font-mono transition shadow-xs"
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-0.5 rounded bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-300 text-[10px] sm:text-[11px] font-mono transition shadow-xs"
               title="Click to inspect MySQL JDBC Connection, Latency & Pool Health"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="font-semibold">MySQL 8.0: Connected (12ms)</span>
+              <span className="hidden sm:inline font-semibold">MySQL 8.0: Connected (12ms)</span>
+              <span className="sm:hidden font-semibold">MySQL (12ms)</span>
             </button>
+
             <button
               onClick={() => {
                 const targetPatient = patients.find((p) => p.patientId === (selectedPatientId || 'PAT-1001')) || patients[0];
@@ -1652,15 +1969,6 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
               <AlertOctagon className="w-3.5 h-3.5 text-rose-400" />
               <span>🚨 Emergency Triage</span>
             </button>
-            <div className="flex items-center gap-1.5 ml-1">
-              <button
-                onClick={() => onSwitchToCode('view/DashboardView.java')}
-                className="px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200 text-[11px] font-mono transition"
-                title="View Java Swing DashboardView.java"
-              >
-                Inspect Swing Code
-              </button>
-            </div>
           </div>
         </div>
 
@@ -1673,8 +1981,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
         )}
 
         {/* Java Swing JMenuBar - Reorganized Clean Navigation */}
-        <div className="relative z-30 flex items-center justify-between px-3 py-1 bg-slate-800 text-xs border-b border-slate-700">
-          <div className="flex items-center gap-1 sm:gap-2 min-w-max">
+        <div className="relative z-30 flex flex-wrap md:flex-nowrap items-center justify-between px-3 py-1 bg-slate-800 text-xs border-b border-slate-700 gap-2">
+          <div className="flex items-center gap-1 sm:gap-2 overflow-x-auto max-w-full pb-0.5 md:pb-0 scrollbar-none">
             {/* 1. Dashboard */}
             <button
               onClick={() => {
@@ -1726,7 +2034,20 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                       <Users className="w-3.5 h-3.5 text-sky-400" />
                       <span>Patient Directory</span>
                     </div>
-                    <span className="text-[10px] text-slate-400">Search & View</span>
+                    <span className="text-[10px] text-slate-400">View All</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveModule('manage');
+                      setActiveNavDropdown(null);
+                    }}
+                    className="w-full px-3 py-2 text-left flex items-center justify-between hover:bg-slate-700 text-slate-200 transition"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Search className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Patient Search</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">Filter Records</span>
                   </button>
                   <button
                     onClick={() => {
@@ -1875,8 +2196,23 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                     }`}
                   >
                     <div className="flex items-center gap-2">
+                      <FileText className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Prescription History</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">By Patient</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveModule('medicines');
+                      setActiveNavDropdown(null);
+                    }}
+                    className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-slate-700 transition ${
+                      activeModule === 'medicines' ? 'text-sky-400 font-bold bg-slate-700/50' : 'text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
                       <Pill className="w-3.5 h-3.5 text-rose-400" />
-                      <span>Medication Search</span>
+                      <span>Medicine-wise Search</span>
                     </div>
                     <span className="text-[10px] text-slate-400">Rx cross-ref</span>
                   </button>
@@ -1962,6 +2298,40 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                 <div className="absolute left-0 mt-1 w-56 bg-slate-800 border border-slate-700 rounded-md shadow-2xl py-1 z-40 text-xs">
                   <button
                     onClick={() => {
+                      setActiveModule('audit_log');
+                      setActiveNavDropdown(null);
+                    }}
+                    className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-slate-700 transition ${
+                      activeModule === 'audit_log' ? 'text-sky-400 font-bold bg-slate-700/50' : 'text-slate-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Clinical Audit Log</span>
+                    </div>
+                    <span className="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded text-slate-300 font-mono">
+                      {auditLogs.length}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveModule('manage');
+                      setPatientArchiveFilter('ARCHIVED');
+                      setActiveNavDropdown(null);
+                    }}
+                    className="w-full px-3 py-2 text-left flex items-center justify-between hover:bg-slate-700 text-slate-200 transition"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Archive className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Archived Records & Restore</span>
+                    </div>
+                    <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-mono">
+                      {patients.filter((p) => p.status === 'ARCHIVED').length}
+                    </span>
+                  </button>
+                  <div className="border-t border-slate-700 my-1"></div>
+                  <button
+                    onClick={() => {
                       setActiveModule('database');
                       setActiveNavDropdown(null);
                     }}
@@ -1988,42 +2358,63 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                     </div>
                     <span className="text-[10px] text-emerald-400">Online</span>
                   </button>
-                  <div className="border-t border-slate-700 my-1"></div>
-                  <button
-                    onClick={() => {
-                      setActiveModule('audit_log');
-                      setActiveNavDropdown(null);
-                    }}
-                    className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-slate-700 transition ${
-                      activeModule === 'audit_log' ? 'text-sky-400 font-bold bg-slate-700/50' : 'text-slate-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Clinical Audit Log</span>
-                    </div>
-                    <span className="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded text-slate-300 font-mono">
-                      {auditLogs.length}
-                    </span>
-                  </button>
                 </div>
               )}
             </div>
           </div>
 
           {/* 7. Logout and User Profile */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto md:ml-0">
             {currentUser ? (
               <div className="flex items-center gap-2">
-                <span className="text-slate-300 text-xs hidden sm:inline">
-                  {currentUser.fullName}{' '}
-                  <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-sky-900 text-sky-200 rounded">
-                    {currentUser.role}
-                  </span>
-                </span>
+                {/* 1-Click Role Switcher */}
+                <div className="relative">
+                  <button
+                    onClick={() => setIsRoleSwitcherOpen(!isRoleSwitcherOpen)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-700/80 hover:bg-slate-700 text-xs text-slate-200 transition border border-slate-600/70"
+                    title="Click to quickly switch staff role to test RBAC permissions"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
+                    <span className="font-semibold text-white hidden md:inline">{currentUser.fullName}</span>
+                    <span className="px-1.5 py-0.5 text-[10px] font-bold bg-sky-900 text-sky-200 rounded">
+                      {currentUser.role}
+                    </span>
+                    <ChevronDown className="w-3 h-3 text-slate-400" />
+                  </button>
+
+                  {isRoleSwitcherOpen && (
+                    <div className="absolute right-0 mt-1 w-56 bg-slate-800 border border-slate-700 rounded-lg shadow-2xl py-1 z-50 text-xs">
+                      <div className="px-3 py-1.5 text-[10px] uppercase font-bold text-slate-400 tracking-wider border-b border-slate-700 flex items-center justify-between">
+                        <span>Switch Staff Role</span>
+                        <span className="text-[9px] text-sky-400 font-mono">RBAC</span>
+                      </div>
+                      {INITIAL_USERS.map((u) => (
+                        <button
+                          key={u.userId}
+                          onClick={() => {
+                            setCurrentUser(u);
+                            setIsRoleSwitcherOpen(false);
+                            showToast(`Active staff switched to ${u.fullName} (${u.role})`, 'info');
+                          }}
+                          className={`w-full px-3 py-2 text-left flex items-center justify-between hover:bg-slate-700 transition ${
+                            currentUser.userId === u.userId ? 'bg-sky-600/30 text-sky-300 font-bold' : 'text-slate-200'
+                          }`}
+                        >
+                          <div>
+                            <div className="font-semibold">{u.fullName}</div>
+                            <div className="text-[10px] text-slate-400">{u.role}</div>
+                          </div>
+                          {currentUser.userId === u.userId && <CheckCircle2 className="w-3.5 h-3.5 text-sky-400" />}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 <button
                   onClick={handleLogout}
                   className="px-2.5 py-1 rounded bg-rose-900/70 hover:bg-rose-800 text-rose-200 text-xs font-semibold flex items-center gap-1 transition"
+                  title="Sign out of current staff session"
                 >
                   <LogOut className="w-3 h-3" />
                   <span>Logout</span>
@@ -2122,7 +2513,7 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                 activeModule === 'medicines' ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40' : 'text-slate-300 hover:text-white'
               }`}
             >
-              Medication Search
+              Prescription & Medicine Search
             </button>
             <button
               onClick={() => setActiveModule('routine_sms')}
@@ -2146,6 +2537,24 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
               <Database className="w-3 h-3 text-sky-400" /> System:
             </span>
             <button
+              onClick={() => setActiveModule('audit_log')}
+              className={`px-2 py-0.5 rounded text-xs transition ${
+                activeModule === 'audit_log' ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40' : 'text-slate-300 hover:text-white'
+              }`}
+            >
+              Clinical Audit Trail
+            </button>
+            <button
+              onClick={() => {
+                setActiveModule('manage');
+                setPatientArchiveFilter('ARCHIVED');
+              }}
+              className="px-2 py-0.5 rounded text-xs text-slate-300 hover:text-white transition flex items-center gap-1"
+            >
+              <Archive className="w-3 h-3 text-amber-400" />
+              <span>Archived Records & Restore</span>
+            </button>
+            <button
               onClick={() => setActiveModule('database')}
               className={`px-2 py-0.5 rounded text-xs transition ${
                 activeModule === 'database' ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40' : 'text-slate-300 hover:text-white'
@@ -2159,14 +2568,6 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
             >
               <span>Database Status & Ping</span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-            </button>
-            <button
-              onClick={() => setActiveModule('audit_log')}
-              className={`px-2 py-0.5 rounded text-xs transition ${
-                activeModule === 'audit_log' ? 'bg-sky-500/20 text-sky-300 font-bold border border-sky-500/40' : 'text-slate-300 hover:text-white'
-              }`}
-            >
-              Clinical Audit Trail
             </button>
           </div>
         )}
@@ -2194,15 +2595,100 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
             </div>
 
             <form onSubmit={handleLogin} className="p-6 space-y-4">
-              <div className="bg-sky-50 border border-sky-200 rounded p-3 text-xs text-sky-900">
-                <p className="font-semibold mb-1">Demo Credentials (Pre-seeded in MySQL):</p>
-                <div className="grid grid-cols-2 gap-2 mt-1">
-                  <div>
-                    <span className="font-medium">Doctor:</span> <code className="bg-white px-1 py-0.5 rounded">doctor / doctor123</code>
-                  </div>
-                  <div>
-                    <span className="font-medium">Admin:</span> <code className="bg-white px-1 py-0.5 rounded">admin / admin123</code>
-                  </div>
+              <div className="bg-sky-50 border border-sky-200 rounded p-3 text-xs text-sky-950">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="font-bold text-sky-900">Hospital Staff Role Profiles (Click to Pre-fill):</p>
+                  <span className="text-[10px] text-sky-600 font-mono">MySQL Seeded</span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRolePreset('Doctor')}
+                    className={`text-left p-1.5 rounded border transition flex flex-col ${
+                      loginRole === 'Doctor'
+                        ? 'bg-blue-100/90 border-blue-400 font-bold text-blue-900'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold text-blue-800">1. Doctor</span>
+                    <span className="text-[10px] text-slate-500 font-mono">doctor / doctor123</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRolePreset('Nurse')}
+                    className={`text-left p-1.5 rounded border transition flex flex-col ${
+                      loginRole === 'Nurse'
+                        ? 'bg-emerald-100/90 border-emerald-400 font-bold text-emerald-900'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold text-emerald-800">2. Nurse</span>
+                    <span className="text-[10px] text-slate-500 font-mono">nurse / nurse123</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRolePreset('Receptionist')}
+                    className={`text-left p-1.5 rounded border transition flex flex-col ${
+                      loginRole === 'Receptionist'
+                        ? 'bg-amber-100/90 border-amber-400 font-bold text-amber-900'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold text-amber-800">3. Receptionist</span>
+                    <span className="text-[10px] text-slate-500 font-mono">receptionist / recep123</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectRolePreset('Admin')}
+                    className={`text-left p-1.5 rounded border transition flex flex-col ${
+                      loginRole === 'Admin'
+                        ? 'bg-purple-100/90 border-purple-400 font-bold text-purple-900'
+                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <span className="text-[11px] font-bold text-purple-800">4. Admin</span>
+                    <span className="text-[10px] text-slate-500 font-mono">admin / admin123</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  User Role: <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={loginRole}
+                  onChange={(e) => handleSelectRolePreset(e.target.value as UserRole)}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-sky-500 bg-white font-medium text-slate-800"
+                >
+                  <option value="Doctor">Doctor (Clinical Workstation & Prescriptions)</option>
+                  <option value="Nurse">Nurse (Nursing Work, Vitals & Ward Care)</option>
+                  <option value="Receptionist">Receptionist (Registration & Front-Desk Appointments)</option>
+                  <option value="Admin">Admin (Hospital Administrator)</option>
+                </select>
+
+                {/* Role Description & Permission Summary */}
+                <div className="mt-1.5 p-2 bg-slate-50 rounded border border-slate-200 text-[11px] text-slate-600 leading-relaxed">
+                  {loginRole === 'Doctor' && (
+                    <p>
+                      <strong className="text-blue-700">Doctor Permissions:</strong> Can view patient details & case history, record examination vitals, manage clinical diagnoses, write prescriptions, and schedule follow-ups.
+                    </p>
+                  )}
+                  {loginRole === 'Nurse' && (
+                    <p>
+                      <strong className="text-emerald-700">Nurse Permissions:</strong> Can view patient records, update vital signs and nursing observations, and manage routine checkups. <em>Clinical diagnosis and prescriptions are read-only.</em>
+                    </p>
+                  )}
+                  {loginRole === 'Receptionist' && (
+                    <p>
+                      <strong className="text-amber-700">Receptionist Permissions:</strong> Can register new patients, update demographic particulars, and schedule appointments. <em>Clinical examination, diagnosis, and prescriptions are read-only.</em>
+                    </p>
+                  )}
+                  {loginRole === 'Admin' && (
+                    <p>
+                      <strong className="text-purple-700">Admin Permissions:</strong> Full system administration, database inspection, audit trail, and user management.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -2232,33 +2718,13 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Role: <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={loginRole}
-                  onChange={(e) => setLoginRole(e.target.value as 'Doctor' | 'Admin')}
-                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-sky-500 bg-white"
-                >
-                  <option value="Doctor">Doctor (Clinical Access & Prescriptions)</option>
-                  <option value="Admin">Admin (System Management & Analytics)</option>
-                </select>
-              </div>
-
-              <div className="pt-2 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => onSwitchToCode('view/LoginView.java')}
-                  className="text-xs text-sky-700 hover:underline font-mono"
-                >
-                  View LoginView.java
-                </button>
+              <div className="pt-2 flex items-center justify-end">
                 <button
                   type="submit"
-                  className="px-6 py-2 bg-sky-800 hover:bg-sky-900 text-white text-sm font-semibold rounded shadow transition"
+                  className="w-full sm:w-auto px-6 py-2.5 bg-sky-700 hover:bg-sky-850 text-white text-sm font-semibold rounded-lg shadow-sm transition flex items-center justify-center gap-2"
                 >
-                  Login (JButton)
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Sign In to Workstation</span>
                 </button>
               </div>
             </form>
@@ -2269,7 +2735,7 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
              ========================================================================= */
           <div className="space-y-6">
             {/* Quick Status Bar */}
-            <div className="bg-white rounded-lg p-4 shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-4">
+            <div className="bg-white rounded-lg p-3 sm:p-4 shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3 sm:gap-4">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 rounded-lg bg-sky-100 text-sky-800">
                   <Stethoscope className="w-5 h-5" />
@@ -2292,9 +2758,28 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                     {activeModule === 'reports' && 'Hospital Clinical Analytics & Reports'}
                     {activeModule === 'database' && 'Relational MySQL Database Inspector'}
                   </h2>
-                  <p className="text-xs text-slate-500">
-                    Active Doctor: <span className="font-medium text-slate-700">{currentUser.fullName}</span> ({currentUser.role})
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                    <span className="text-xs text-slate-500">
+                      Logged in: <span className="font-semibold text-slate-800">{currentUser.fullName}</span>
+                    </span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                      currentRole === 'Doctor'
+                        ? 'bg-blue-100 text-blue-800 border-blue-300'
+                        : currentRole === 'Nurse'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        : currentRole === 'Receptionist'
+                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                        : 'bg-purple-100 text-purple-800 border-purple-300'
+                    }`}>
+                      Role: {currentRole}
+                    </span>
+                    <span className="text-[11px] text-slate-500 hidden sm:inline">
+                      {isDoctor && '• Full Clinical Authority (Exam, Diagnosis, Rx, Follow-up)'}
+                      {isNurse && '• Nursing Care (Vitals & Observations active • Diagnosis/Rx Read-Only)'}
+                      {isReceptionist && '• Front Desk (Registration & Appointments active • Clinical Read-Only)'}
+                      {currentRole === 'Admin' && '• System Administrator'}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -2314,9 +2799,203 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
               </div>
             </div>
 
+            {/* User-Friendly Active Patient Context Banner */}
+            {['new_case', 'history', 'timeline', 'comparison', 'followups', 'medicines', 'documents', 'routine_sms', 'manage'].includes(activeModule) && (() => {
+              const activePatient = patients.find((p) => p.patientId === (selectedPatientId || 'PAT-1001')) || patients[0];
+              if (!activePatient) return null;
+              const initials = activePatient.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase();
+              return (
+                <div className="bg-white rounded-lg border border-slate-200 p-3 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-sky-100 text-sky-800 font-bold flex items-center justify-center text-xs border border-sky-200 shadow-xs shrink-0">
+                      {initials}
+                    </div>
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-bold text-slate-900 text-sm">{activePatient.name}</span>
+                        <span className="font-mono text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded text-[11px] font-semibold border border-slate-200">
+                          {activePatient.patientId}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          activePatient.status === 'ARCHIVED'
+                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                            : activePatient.wardName
+                            ? 'bg-purple-100 text-purple-800 border border-purple-300'
+                            : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        }`}>
+                          {activePatient.status === 'ARCHIVED'
+                            ? 'Archived Record'
+                            : activePatient.wardName
+                            ? `Inpatient: ${activePatient.wardName} (Bed ${activePatient.bedNumber})`
+                            : 'Outpatient (OPD)'}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-slate-500 text-[11px] mt-0.5">
+                        <span>{activePatient.age} yrs</span>
+                        <span>·</span>
+                        <span>{activePatient.gender}</span>
+                        <span>·</span>
+                        <span>Blood: <strong className="text-slate-700">{activePatient.bloodGroup}</strong></span>
+                        <span>·</span>
+                        <span>Phone: {activePatient.mobile}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Switch Patient Quick Dropdown */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1 rounded border border-slate-200">
+                      <label className="text-[11px] text-slate-600 font-semibold shrink-0">Active Patient:</label>
+                      <select
+                        value={activePatient.patientId}
+                        onChange={(e) => {
+                          const nextId = e.target.value;
+                          setSelectedPatientId(nextId);
+                          setCasePatientId(nextId);
+                          setHistoryPatientQuery(nextId);
+                          showToast(`Active patient set to ${nextId}`, 'info');
+                        }}
+                        className="text-xs bg-white border border-slate-300 rounded px-2 py-0.5 font-medium text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500 max-w-[180px] sm:max-w-[240px] truncate"
+                      >
+                        {patients.map((p) => (
+                          <option key={p.patientId} value={p.patientId}>
+                            {p.patientId} - {p.name} ({p.gender}, {p.age}y)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Fast Action Buttons */}
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setCasePatientId(activePatient.patientId);
+                          setActiveModule('new_case');
+                        }}
+                        className={`px-2.5 py-1 rounded font-semibold text-xs flex items-center gap-1 transition ${
+                          activeModule === 'new_case'
+                            ? 'bg-sky-700 text-white'
+                            : 'bg-sky-50 text-sky-800 hover:bg-sky-100 border border-sky-200'
+                        }`}
+                        title="Record a new visit/case for this patient"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>+ Case</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedPatientId(activePatient.patientId);
+                          setActiveModule('timeline');
+                        }}
+                        className={`px-2.5 py-1 rounded font-semibold text-xs flex items-center gap-1 transition ${
+                          activeModule === 'timeline'
+                            ? 'bg-sky-700 text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                        }`}
+                        title="View chronological clinical timeline"
+                      >
+                        <Activity className="w-3 h-3 text-emerald-600" />
+                        <span>Timeline</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSelectedPatientId(activePatient.patientId);
+                          setActiveModule('comparison');
+                        }}
+                        className={`px-2.5 py-1 rounded font-semibold text-xs flex items-center gap-1 transition ${
+                          activeModule === 'comparison'
+                            ? 'bg-sky-700 text-white'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200'
+                        }`}
+                        title="Compare multi-visit changes side-by-side"
+                      >
+                        <GitCompare className="w-3 h-3 text-indigo-600" />
+                        <span>Compare</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          handleDownloadPdfForPatient(activePatient);
+                          showToast(`Generated PDF dossier for ${activePatient.name}`, 'success');
+                        }}
+                        className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-semibold text-xs flex items-center gap-1 transition"
+                        title="Download complete multi-visit clinical record PDF"
+                      >
+                        <FileDown className="w-3 h-3 text-purple-600" />
+                        <span className="hidden sm:inline">PDF</span>
+                      </button>
+                      <button
+                        onClick={() => setEmergencyPatient(activePatient)}
+                        className="px-2.5 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-xs flex items-center gap-1 transition"
+                        title="Open 10-second rapid emergency triage card"
+                      >
+                        <AlertOctagon className="w-3 h-3 text-rose-600" />
+                        <span className="hidden sm:inline">Emergency</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* DASHBOARD MODULE */}
             {activeModule === 'dashboard' && (
               <div className="space-y-6">
+                {/* Clinical Quick Action Bar */}
+                <div className="bg-gradient-to-r from-sky-900 via-sky-800 to-indigo-900 text-white rounded-xl p-4 shadow-md flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-lg bg-white/10 backdrop-blur-xs text-sky-200">
+                      <Zap className="w-5 h-5 text-amber-300 fill-amber-300" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white tracking-wide">Today's Clinical Quick Actions</h3>
+                      <p className="text-xs text-sky-200">Instant shortcuts for rapid hospital workflows & case recording</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      onClick={() => setActiveModule('register')}
+                      className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>+ Register Patient</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setCasePatientId(selectedPatientId || 'PAT-1001');
+                        setActiveModule('new_case');
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>+ New Case Entry</span>
+                    </button>
+                    <button
+                      onClick={() => setIsSpotlightOpen(true)}
+                      className="px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white text-xs font-semibold transition flex items-center gap-1.5 border border-white/20"
+                    >
+                      <Search className="w-3.5 h-3.5 text-sky-300" />
+                      <span>Search (Ctrl+K)</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        const target = patients.find((p) => p.patientId === (selectedPatientId || 'PAT-1001')) || patients[0];
+                        setEmergencyPatient(target);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-rose-600/90 hover:bg-rose-600 text-white text-xs font-bold transition flex items-center gap-1.5 shadow-xs"
+                    >
+                      <AlertOctagon className="w-3.5 h-3.5" />
+                      <span>Emergency Triage</span>
+                    </button>
+                    <button
+                      onClick={() => handleDownloadHospitalReport('Comprehensive')}
+                      className="px-3 py-1.5 rounded-lg bg-slate-850 hover:bg-slate-800 text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 border border-slate-700"
+                    >
+                      <FileDown className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Hospital Analytics PDF</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Metric Summary Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                   <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
@@ -2600,14 +3279,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                 <div className="px-6 py-4 bg-sky-900 text-white flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <UserPlus className="w-5 h-5 text-sky-300" />
-                    <h3 className="text-base font-bold">Patient Registration (Swing Form - JPanel)</h3>
+                    <h3 className="text-base font-bold">Patient Registration (New Inpatient / Outpatient)</h3>
                   </div>
-                  <button
-                    onClick={() => onSwitchToCode('view/PatientRegistrationView.java')}
-                    className="text-xs bg-sky-800 hover:bg-sky-700 px-2.5 py-1 rounded text-sky-100 font-mono transition"
-                  >
-                    View PatientRegistrationView.java
-                  </button>
                 </div>
 
                 <form onSubmit={handleRegisterPatient} className="p-6 space-y-4">
@@ -2993,26 +3666,38 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                     </div>
                   </div>
 
-                  <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-3">
+                  <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <button
                       type="button"
-                      onClick={() => {
-                        setRegName('');
-                        setRegAge('');
-                        setRegMobile('');
-                        setRegAddress('');
-                        setRegBloodGroup('Select');
-                      }}
-                      className="px-4 py-2 border border-slate-300 rounded text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
+                      onClick={handleFillDemoPatient}
+                      className="w-full sm:w-auto px-3.5 py-2 bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300 rounded text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
+                      title="1-Click Auto-fill a realistic patient record with address, blood group, bed allocation and routine checks"
                     >
-                      Clear Form
+                      <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                      <span>⚡ Auto-fill Sample Patient</span>
                     </button>
-                    <button
-                      type="submit"
-                      className="px-6 py-2 bg-sky-800 hover:bg-sky-900 text-white rounded text-xs font-bold shadow transition"
-                    >
-                      Save Patient to Database (JButton)
-                    </button>
+
+                    <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRegName('');
+                          setRegAge('');
+                          setRegMobile('');
+                          setRegAddress('');
+                          setRegBloodGroup('Select');
+                        }}
+                        className="flex-1 sm:flex-initial px-4 py-2 border border-slate-300 rounded text-xs font-medium text-slate-700 hover:bg-slate-50 transition text-center"
+                      >
+                        Clear Form
+                      </button>
+                      <button
+                        type="submit"
+                        className="flex-1 sm:flex-initial px-5 sm:px-6 py-2 bg-sky-800 hover:bg-sky-900 text-white rounded text-xs font-bold shadow transition text-center whitespace-nowrap"
+                      >
+                        Save Patient
+                      </button>
+                    </div>
                   </div>
                 </form>
               </div>
@@ -3087,17 +3772,11 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                     >
                       <Plus className="w-3.5 h-3.5" /> Add New
                     </button>
-                    <button
-                      onClick={() => onSwitchToCode('view/PatientManagementView.java')}
-                      className="px-2.5 py-1.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-xs font-mono transition"
-                    >
-                      PatientManagementView.java
-                    </button>
                   </div>
                 </div>
 
-                <div className="overflow-x-auto p-4">
-                  <table className="w-full text-left text-xs border border-slate-200 rounded">
+                <div className="overflow-x-auto p-2 sm:p-4">
+                  <table className="w-full text-left text-xs border border-slate-200 rounded min-w-[700px]">
                     <thead className="bg-slate-100 text-slate-700 font-semibold uppercase tracking-wider border-b border-slate-200">
                       <tr>
                         <th className="px-3.5 py-2.5">Patient ID</th>
@@ -3123,15 +3802,39 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           const patientVisits = cases.filter((c) => c.patientId === p.patientId).length;
                           const patientBed = beds.find((b) => b.patientId === p.patientId && b.status === 'Occupied');
                           const isArchived = p.status === 'ARCHIVED';
+                          const isSelected = selectedPatientId === p.patientId;
                           return (
-                            <tr key={p.patientId} className={`hover:bg-sky-50/50 ${isArchived ? 'bg-amber-50/40 opacity-75' : ''}`}>
+                            <tr
+                              key={p.patientId}
+                              onClick={() => {
+                                setSelectedPatientId(p.patientId);
+                                setCasePatientId(p.patientId);
+                                setHistoryPatientQuery(p.patientId);
+                                showToast(`Active patient set to ${p.name} (${p.patientId})`, 'info');
+                              }}
+                              className={`cursor-pointer transition ${
+                                isSelected
+                                  ? 'bg-sky-50/90 ring-1 ring-sky-400/80 font-medium'
+                                  : 'hover:bg-slate-50'
+                              } ${isArchived ? 'bg-amber-50/40 opacity-75' : ''}`}
+                            >
                               <td className="px-3.5 py-2.5 font-mono font-bold text-sky-800">
-                                {p.patientId}
-                                {isArchived && (
-                                  <span className="ml-1.5 px-1.5 py-0.2 rounded text-[9px] bg-amber-200 text-amber-900 font-bold">
-                                    ARCHIVED
-                                  </span>
-                                )}
+                                <div className="flex items-center gap-1.5">
+                                  {isSelected && (
+                                    <span className="w-2 h-2 rounded-full bg-sky-500 animate-pulse" title="Active working patient" />
+                                  )}
+                                  <span>{p.patientId}</span>
+                                  {isSelected && (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] bg-sky-600 text-white font-bold">
+                                      ACTIVE
+                                    </span>
+                                  )}
+                                  {isArchived && (
+                                    <span className="ml-1 px-1.5 py-0.2 rounded text-[9px] bg-amber-200 text-amber-900 font-bold">
+                                      ARCHIVED
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-3.5 py-2.5 font-medium text-slate-900">{p.name}</td>
                               <td className="px-3.5 py-2.5">
@@ -3175,7 +3878,23 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                                   {patientVisits} visit(s)
                                 </span>
                               </td>
-                              <td className="px-3.5 py-2.5 text-right space-x-1 whitespace-nowrap">
+                              <td className="px-3.5 py-2.5 text-right space-x-1 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                <button
+                                  onClick={() => {
+                                    setSelectedPatientId(p.patientId);
+                                    setCasePatientId(p.patientId);
+                                    setHistoryPatientQuery(p.patientId);
+                                    showToast(`Active patient set to ${p.name}`, 'info');
+                                  }}
+                                  className={`px-2 py-1 rounded font-semibold text-[11px] transition inline-flex items-center gap-1 ${
+                                    isSelected
+                                      ? 'bg-sky-600 text-white font-bold shadow-2xs'
+                                      : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-300'
+                                  }`}
+                                  title="Set as active working patient across all clinical modules"
+                                >
+                                  {isSelected ? '✓ Active' : 'Select'}
+                                </button>
                                 <button
                                   onClick={() => handleStartEditPatient(p)}
                                   className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded font-semibold text-[11px] transition inline-flex items-center gap-1 border border-amber-300"
@@ -3300,17 +4019,11 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
               <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 bg-sky-900 text-white flex items-center justify-between">
                   <div>
-                    <h3 className="text-base font-bold">Clinical Case-Taking & Prescription (JTabbedPane)</h3>
+                    <h3 className="text-base font-bold">Clinical Case-Taking & Prescription</h3>
                     <p className="text-xs text-sky-200">
                       Atomic Transaction: Patient → CaseHistory → Examination → Diagnosis → Prescription → FollowUp
                     </p>
                   </div>
-                  <button
-                    onClick={() => onSwitchToCode('view/CaseTakingView.java')}
-                    className="text-xs bg-sky-800 hover:bg-sky-700 px-2.5 py-1 rounded text-sky-100 font-mono transition"
-                  >
-                    View CaseTakingView.java
-                  </button>
                 </div>
 
                 {/* Dynamic Case Completeness Bar */}
@@ -3362,6 +4075,82 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                   </div>
                 </div>
 
+                {/* User-Friendly Quick Clinical Presets (1-Click Autofill) */}
+                <div className="bg-sky-50/70 px-6 py-2.5 border-b border-sky-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-1.5 text-sky-950 font-semibold">
+                    <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                    <span>Quick Clinical Templates:</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {CLINICAL_PRESETS.map((preset, idx) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => handleApplyClinicalPreset(idx)}
+                        className="px-2.5 py-1 bg-white hover:bg-sky-100 text-sky-900 border border-sky-200 rounded text-[11px] font-medium transition shadow-2xs flex items-center gap-1"
+                        title={`Click to auto-populate ${preset.name} clinical case fields`}
+                      >
+                        <span>{preset.name}</span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={handleResetCaseForm}
+                      className="px-2 py-1 text-slate-500 hover:text-slate-800 text-[11px] transition ml-1"
+                      title="Clear all form fields"
+                    >
+                      Clear Fields
+                    </button>
+                  </div>
+                </div>
+
+                {/* Step Progression Navigation Bar */}
+                <div className="bg-slate-100/90 px-6 py-2 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <span className="font-semibold text-slate-600 text-[11px]">Workflow Steps:</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('case-section-1')?.scrollIntoView({ behavior: 'smooth' })}
+                      className="px-2.5 py-1 rounded bg-white hover:bg-slate-200 border border-slate-300 text-slate-700 font-semibold text-[11px] flex items-center gap-1 transition shadow-2xs"
+                    >
+                      <span className="w-4 h-4 rounded-full bg-sky-800 text-white flex items-center justify-center text-[10px]">1</span>
+                      <span>History</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('case-section-2')?.scrollIntoView({ behavior: 'smooth' })}
+                      className="px-2.5 py-1 rounded bg-white hover:bg-slate-200 border border-slate-300 text-slate-700 font-semibold text-[11px] flex items-center gap-1 transition shadow-2xs"
+                    >
+                      <span className="w-4 h-4 rounded-full bg-sky-800 text-white flex items-center justify-center text-[10px]">2</span>
+                      <span>Vitals & Exam</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('case-section-3')?.scrollIntoView({ behavior: 'smooth' })}
+                      className="px-2.5 py-1 rounded bg-white hover:bg-slate-200 border border-slate-300 text-slate-700 font-semibold text-[11px] flex items-center gap-1 transition shadow-2xs"
+                    >
+                      <span className="w-4 h-4 rounded-full bg-sky-800 text-white flex items-center justify-center text-[10px]">3</span>
+                      <span>Diagnosis</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('case-section-4')?.scrollIntoView({ behavior: 'smooth' })}
+                      className="px-2.5 py-1 rounded bg-white hover:bg-slate-200 border border-slate-300 text-slate-700 font-semibold text-[11px] flex items-center gap-1 transition shadow-2xs"
+                    >
+                      <span className="w-4 h-4 rounded-full bg-sky-800 text-white flex items-center justify-center text-[10px]">4</span>
+                      <span>Prescription</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('case-section-5')?.scrollIntoView({ behavior: 'smooth' })}
+                      className="px-2.5 py-1 rounded bg-white hover:bg-slate-200 border border-slate-300 text-slate-700 font-semibold text-[11px] flex items-center gap-1 transition shadow-2xs"
+                    >
+                      <span className="w-4 h-4 rounded-full bg-sky-800 text-white flex items-center justify-center text-[10px]">5</span>
+                      <span>Follow-up</span>
+                    </button>
+                  </div>
+                </div>
+
                 {editingCaseId !== null && (
                   <div className="mx-6 mt-4 p-3.5 bg-amber-50 border border-amber-300 rounded-lg flex flex-wrap items-center justify-between gap-3 text-xs text-amber-950 shadow-xs">
                     <div className="flex items-center gap-2">
@@ -3383,12 +4172,45 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                   </div>
                 )}
 
+                {/* Role Permission Guidance Banner */}
+                <div className={`px-6 py-2.5 text-xs flex flex-wrap items-center justify-between gap-2 border-b ${
+                  isDoctor
+                    ? 'bg-blue-50 text-blue-900 border-blue-200'
+                    : isNurse
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-200'
+                    : 'bg-amber-50 text-amber-900 border-amber-200'
+                }`}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="font-bold uppercase tracking-wider text-[10px] px-2 py-0.5 rounded bg-white border border-slate-300">
+                      Logged-in Role: {currentRole}
+                    </span>
+                    <span>
+                      {isDoctor && 'Full Clinical Authority: Examination, Diagnosis, Prescription, and Follow-up are fully editable.'}
+                      {isNurse && 'Nursing Work Authority: Vitals, examination survey, and nursing notes are enabled. Diagnosis and Prescriptions are read-only.'}
+                      {isReceptionist && 'Front-Desk Authority: Registration and appointments are enabled. Clinical examination, diagnosis, and prescriptions are read-only.'}
+                    </span>
+                  </div>
+                  {(!canManageDiagnosis || !canManagePrescription) && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded border border-amber-300">
+                      <Lock className="w-3 h-3 text-amber-700" />
+                      Doctor-Only Fields Locked
+                    </span>
+                  )}
+                </div>
+
                 <form onSubmit={handleSaveCompleteCase} className="p-6 space-y-6">
                   {/* Step 1: Patient Selection & Symptoms */}
                   <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50">
-                    <h4 className="text-xs font-bold uppercase text-sky-800 tracking-wider mb-3 flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-sky-800 text-white flex items-center justify-center text-[11px]">1</span>
-                      Patient Identification & Clinical Case History
+                    <h4 className="text-xs font-bold uppercase text-sky-800 tracking-wider mb-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-sky-800 text-white flex items-center justify-center text-[11px]">1</span>
+                        <span>Patient Identification & Clinical Case History</span>
+                      </div>
+                      {isReceptionist && (
+                        <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200">
+                          Clinical Info: Read-Only for Receptionist
+                        </span>
+                      )}
                     </h4>
 
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
@@ -3431,7 +4253,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           value={caseDuration}
                           onChange={(e) => setCaseDuration(e.target.value)}
                           placeholder="e.g. 4 days / 2 weeks"
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded bg-white"
+                          disabled={isReceptionist}
+                          className={`w-full px-3 py-2 text-sm border border-slate-300 rounded ${isReceptionist ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                           required
                         />
                       </div>
@@ -3447,7 +4270,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           value={caseChiefComplaint}
                           onChange={(e) => setCaseChiefComplaint(e.target.value)}
                           placeholder="e.g. Severe throbbing headache, fever with evening chills, body aches"
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded bg-white"
+                          disabled={isReceptionist}
+                          className={`w-full px-3 py-2 text-sm border border-slate-300 rounded ${isReceptionist ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                           required
                         />
                       </div>
@@ -3461,7 +4285,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           onChange={(e) => setCaseSymptoms(e.target.value)}
                           rows={2}
                           placeholder="Describe symptom onset, character, radiation, relieving and aggravating factors..."
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded bg-white"
+                          disabled={isReceptionist}
+                          className={`w-full px-3 py-2 text-sm border border-slate-300 rounded ${isReceptionist ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                           required
                         ></textarea>
                       </div>
@@ -3474,7 +4299,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                             value={casePastHistory}
                             onChange={(e) => setCasePastHistory(e.target.value)}
                             placeholder="e.g. HTN, Diabetes"
-                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                            disabled={isReceptionist}
+                            className={`w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded ${isReceptionist ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                           />
                         </div>
                         <div>
@@ -3484,7 +4310,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                             value={caseAllergy}
                             onChange={(e) => setCaseAllergy(e.target.value)}
                             placeholder="e.g. Penicillin, Sulfa"
-                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                            disabled={isReceptionist}
+                            className={`w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded ${isReceptionist ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                           />
                         </div>
                         <div>
@@ -3494,7 +4321,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                             value={caseFamilyHistory}
                             onChange={(e) => setCaseFamilyHistory(e.target.value)}
                             placeholder="e.g. Paternal CAD"
-                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                            disabled={isReceptionist}
+                            className={`w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded ${isReceptionist ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                           />
                         </div>
                         <div>
@@ -3504,7 +4332,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                             value={caseCurrentMedication}
                             onChange={(e) => setCaseCurrentMedication(e.target.value)}
                             placeholder="e.g. Metformin 500mg"
-                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                            disabled={isReceptionist}
+                            className={`w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded ${isReceptionist ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                           />
                         </div>
                       </div>
@@ -3513,9 +4342,21 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
 
                   {/* Step 2: Physical Examination */}
                   <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50">
-                    <h4 className="text-xs font-bold uppercase text-sky-800 tracking-wider mb-3 flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-sky-800 text-white flex items-center justify-center text-[11px]">2</span>
-                      Physical Examination & Vital Signs
+                    <h4 className="text-xs font-bold uppercase text-sky-800 tracking-wider mb-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-sky-800 text-white flex items-center justify-center text-[11px]">2</span>
+                        <span>Physical Examination & Vital Signs</span>
+                      </div>
+                      {!canManageExamination ? (
+                        <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                          <Lock className="w-3 h-3 text-amber-700" />
+                          Doctor & Nurse Only (Read-Only for Receptionist)
+                        </span>
+                      ) : isNurse ? (
+                        <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
+                          Nursing Vitals & Survey Active
+                        </span>
+                      ) : null}
                     </h4>
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                       <div>
@@ -3524,7 +4365,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           type="text"
                           value={examTemp}
                           onChange={(e) => setExamTemp(e.target.value)}
-                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                          disabled={!canManageExamination}
+                          className={`w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded ${!canManageExamination ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                         />
                       </div>
                       <div>
@@ -3533,7 +4375,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           type="text"
                           value={examBP}
                           onChange={(e) => setExamBP(e.target.value)}
-                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                          disabled={!canManageExamination}
+                          className={`w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded ${!canManageExamination ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                         />
                       </div>
                       <div>
@@ -3542,7 +4385,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           type="text"
                           value={examPulse}
                           onChange={(e) => setExamPulse(e.target.value)}
-                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                          disabled={!canManageExamination}
+                          className={`w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded ${!canManageExamination ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                         />
                       </div>
                       <div>
@@ -3551,7 +4395,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           type="text"
                           value={examWeight}
                           onChange={(e) => setExamWeight(e.target.value)}
-                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                          disabled={!canManageExamination}
+                          className={`w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded ${!canManageExamination ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                         />
                       </div>
                       <div>
@@ -3560,7 +4405,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           type="text"
                           value={examHeight}
                           onChange={(e) => setExamHeight(e.target.value)}
-                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                          disabled={!canManageExamination}
+                          className={`w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded ${!canManageExamination ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                         />
                       </div>
                     </div>
@@ -3571,17 +4417,34 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                         value={examObservation}
                         onChange={(e) => setExamObservation(e.target.value)}
                         placeholder="e.g. Mild pallor, no icterus, chest bilateral clear vesicular breath sounds"
-                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded bg-white"
+                        disabled={!canManageExamination}
+                        className={`w-full px-3 py-2 text-sm border border-slate-300 rounded ${!canManageExamination ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                       />
                     </div>
                   </div>
 
                   {/* Step 3: Diagnosis */}
                   <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50">
-                    <h4 className="text-xs font-bold uppercase text-sky-800 tracking-wider mb-3 flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-sky-800 text-white flex items-center justify-center text-[11px]">3</span>
-                      Clinical Diagnosis & Doctor Notes
+                    <h4 className="text-xs font-bold uppercase text-sky-800 tracking-wider mb-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-sky-800 text-white flex items-center justify-center text-[11px]">3</span>
+                        <span>Clinical Diagnosis & Doctor Notes</span>
+                      </div>
+                      {!canManageDiagnosis && (
+                        <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                          <Lock className="w-3 h-3 text-amber-700" />
+                          Doctor Only (Read-Only for {currentRole})
+                        </span>
+                      )}
                     </h4>
+
+                    {!canManageDiagnosis && (
+                      <div className="mb-3 p-2.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900 flex items-center gap-2">
+                        <Lock className="w-4 h-4 text-amber-700 shrink-0" />
+                        <span>Medical diagnoses and clinical notes are doctor-only and read-only for {currentRole}.</span>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -3592,8 +4455,9 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           value={diagText}
                           onChange={(e) => setDiagText(e.target.value)}
                           placeholder="e.g. Acute Bronchitis with Reactive Airway Disease"
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded bg-white"
-                          required
+                          disabled={!canManageDiagnosis}
+                          className={`w-full px-3 py-2 text-sm border border-slate-300 rounded ${!canManageDiagnosis ? 'bg-slate-100 cursor-not-allowed text-slate-700' : 'bg-white'}`}
+                          required={canManageDiagnosis}
                         />
                       </div>
                       <div>
@@ -3605,7 +4469,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           value={diagNotes}
                           onChange={(e) => setDiagNotes(e.target.value)}
                           placeholder="e.g. Steam inhalation TID, chest physiotherapy, avoid cold beverages"
-                          className="w-full px-3 py-2 text-sm border border-slate-300 rounded bg-white"
+                          disabled={!canManageDiagnosis}
+                          className={`w-full px-3 py-2 text-sm border border-slate-300 rounded ${!canManageDiagnosis ? 'bg-slate-100 cursor-not-allowed text-slate-700' : 'bg-white'}`}
                         />
                       </div>
                     </div>
@@ -3613,68 +4478,110 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
 
                   {/* Step 4: Prescription Medicines (Multiple Items) */}
                   <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50">
-                    <h4 className="text-xs font-bold uppercase text-sky-800 tracking-wider mb-3 flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-sky-800 text-white flex items-center justify-center text-[11px]">4</span>
-                      Prescription (Multiple Medicines per Case Requirement)
+                    <h4 className="text-xs font-bold uppercase text-sky-800 tracking-wider mb-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-sky-800 text-white flex items-center justify-center text-[11px]">4</span>
+                        <span>Prescription (Multiple Medicines per Case Requirement)</span>
+                      </div>
+                      {!canManagePrescription && (
+                        <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                          <Lock className="w-3 h-3 text-amber-700" />
+                          Doctor Only (Read-Only for {currentRole})
+                        </span>
+                      )}
                     </h4>
 
-                    {/* Add Medicine Row Form */}
-                    <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 items-end mb-3 p-3 bg-white border border-slate-200 rounded">
-                      <div className="sm:col-span-2">
-                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">Medicine Name:</label>
-                        <input
-                          type="text"
-                          value={newMedName}
-                          onChange={(e) => setNewMedName(e.target.value)}
-                          placeholder="e.g. Tab. Azithromycin 500mg"
-                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">Dosage:</label>
-                        <input
-                          type="text"
-                          value={newMedDosage}
-                          onChange={(e) => setNewMedDosage(e.target.value)}
-                          placeholder="e.g. 1 Tab"
-                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">Frequency:</label>
-                        <select
-                          value={newMedFreq}
-                          onChange={(e) => setNewMedFreq(e.target.value)}
-                          className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded bg-white"
-                        >
-                          <option value="1-0-0 (Morning)">1-0-0 (Morning)</option>
-                          <option value="0-1-0 (Afternoon)">0-1-0 (Afternoon)</option>
-                          <option value="0-0-1 (Night)">0-0-1 (Night)</option>
-                          <option value="1-0-1 (Twice daily)">1-0-1 (Twice daily)</option>
-                          <option value="1-1-1 (Thrice daily)">1-1-1 (Thrice daily)</option>
-                          <option value="SOS (As needed)">SOS (As needed)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-700 mb-1">Duration:</label>
-                        <input
-                          type="text"
-                          value={newMedDuration}
-                          onChange={(e) => setNewMedDuration(e.target.value)}
-                          placeholder="e.g. 5 days"
-                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded"
-                        />
-                      </div>
-                      <div>
-                        <button
-                          type="button"
-                          onClick={handleAddMedicine}
-                          className="w-full py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-xs font-bold transition flex items-center justify-center gap-1"
-                        >
-                          <Plus className="w-3.5 h-3.5" /> Add Drug
-                        </button>
+                    {/* Add Medicine Row Form (Doctor Only) */}
+                    {canManagePrescription ? (
+                      <div className="space-y-3 mb-3">
+                        {/* Quick Common Medications Chips */}
+                        <div className="p-2.5 bg-sky-50/70 border border-sky-200/80 rounded-lg flex flex-wrap items-center gap-1.5 text-xs">
+                          <span className="text-[11px] font-bold text-sky-900 mr-1 flex items-center gap-1">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                            <span>Quick Add Common Drugs:</span>
+                          </span>
+                          {QUICK_MEDICINES.map((med) => (
+                            <button
+                              key={med.name}
+                              type="button"
+                              onClick={() => handleQuickAddMedicine(med)}
+                              className="px-2 py-1 rounded bg-white hover:bg-sky-100 text-sky-900 border border-sky-200 text-[11px] font-semibold transition shadow-2xs flex items-center gap-1"
+                              title={`Click to instantly add ${med.name} (${med.freq}, ${med.duration}) to Rx`}
+                            >
+                              <Plus className="w-2.5 h-2.5 text-sky-600" />
+                              <span>{med.name.replace(/^(Tab\.|Cap\.|Syp\.)\s*/, '')}</span>
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 items-end p-3 bg-white border border-slate-200 rounded">
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">Medicine Name:</label>
+                          <input
+                            type="text"
+                            value={newMedName}
+                            onChange={(e) => setNewMedName(e.target.value)}
+                            placeholder="e.g. Tab. Azithromycin 500mg"
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">Dosage:</label>
+                          <input
+                            type="text"
+                            value={newMedDosage}
+                            onChange={(e) => setNewMedDosage(e.target.value)}
+                            placeholder="e.g. 1 Tab"
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">Frequency:</label>
+                          <select
+                            value={newMedFreq}
+                            onChange={(e) => setNewMedFreq(e.target.value)}
+                            className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                          >
+                            <option value="1-0-0 (Morning)">1-0-0 (Morning)</option>
+                            <option value="0-1-0 (Afternoon)">0-1-0 (Afternoon)</option>
+                            <option value="0-0-1 (Night)">0-0-1 (Night)</option>
+                            <option value="1-0-1 (Twice daily)">1-0-1 (Twice daily)</option>
+                            <option value="1-1-1 (Thrice daily)">1-1-1 (Thrice daily)</option>
+                            <option value="SOS (As needed)">SOS (As needed)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-700 mb-1">Duration:</label>
+                          <input
+                            type="text"
+                            value={newMedDuration}
+                            onChange={(e) => setNewMedDuration(e.target.value)}
+                            placeholder="e.g. 5 days"
+                            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded"
+                          />
+                        </div>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={handleAddMedicine}
+                            className="w-full py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-xs font-bold transition flex items-center justify-center gap-1"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Add Drug
+                          </button>
+                        </div>
                       </div>
                     </div>
+                  ) : (
+                      <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Lock className="w-4 h-4 text-amber-700 shrink-0" />
+                          <span>Prescription regimen and pharmaceutical drug dispensing can only be managed by Doctors. (Read-Only for {currentRole})</span>
+                        </div>
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-200/80 px-2 py-0.5 rounded">
+                          Clinician Protected
+                        </span>
+                      </div>
+                    )}
 
                     {/* Medicines List Table */}
                     <div className="overflow-x-auto bg-white border border-slate-200 rounded">
@@ -3694,7 +4601,7 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           {medItems.length === 0 ? (
                             <tr>
                               <td colSpan={7} className="px-3 py-4 text-center text-slate-400 text-xs">
-                                No medicines added yet. Use the form above to prescribe medicines.
+                                No medicines prescribed in this encounter.
                               </td>
                             </tr>
                           ) : (
@@ -3707,14 +4614,20 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                                 <td className="px-3 py-2">{med.duration}</td>
                                 <td className="px-3 py-2 text-slate-600">{med.instructions}</td>
                                 <td className="px-3 py-2 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleRemoveMedicine(idx)}
-                                    className="text-rose-600 hover:text-rose-800 p-1"
-                                    title="Remove this medicine"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  {canManagePrescription ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveMedicine(idx)}
+                                      className="text-rose-600 hover:text-rose-800 p-1"
+                                      title="Remove this medicine"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  ) : (
+                                    <span className="text-[11px] text-slate-400 font-medium inline-flex items-center gap-1">
+                                      <Lock className="w-3 h-3 text-slate-400" /> Locked
+                                    </span>
+                                  )}
                                 </td>
                               </tr>
                             ))
@@ -3726,9 +4639,14 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
 
                   {/* Step 5: Follow-Up Record */}
                   <div className="border border-slate-200 rounded-lg p-4 bg-slate-50/50">
-                    <h4 className="text-xs font-bold uppercase text-sky-800 tracking-wider mb-3 flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-sky-800 text-white flex items-center justify-center text-[11px]">5</span>
-                      Follow-up Scheduling
+                    <h4 className="text-xs font-bold uppercase text-sky-800 tracking-wider mb-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-5 h-5 rounded-full bg-sky-800 text-white flex items-center justify-center text-[11px]">5</span>
+                        <span>Follow-up Scheduling & Appointments</span>
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-medium">
+                        Enabled for Doctor, Nurse & Receptionist
+                      </span>
                     </h4>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
@@ -3797,7 +4715,8 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           value={caseDoctorNotes}
                           onChange={(e) => setCaseDoctorNotes(e.target.value)}
                           placeholder="e.g. Patient stable, monitor temperature chart"
-                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded bg-white"
+                          disabled={!canManageDiagnosis}
+                          className={`w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded ${!canManageDiagnosis ? 'bg-slate-100 cursor-not-allowed text-slate-600' : 'bg-white'}`}
                         />
                       </div>
                       <div>
@@ -3816,14 +4735,14 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                   </div>
 
                   {/* Submit Button */}
-                  <div className="pt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                  <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="text-xs text-slate-500">
                       Case Completeness: <strong className="text-slate-800 font-mono">{caseCompletenessPercentage}%</strong>
                       {caseCompletenessPercentage < 100 && (
                         <span className="text-amber-700 ml-1.5">(Can still be saved as work-in-progress)</span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                       {editingCaseId !== null && (
                         <button
                           type="button"
@@ -3833,19 +4752,46 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           Cancel
                         </button>
                       )}
-                      <button
-                        type="submit"
-                        className={`px-6 py-2.5 text-white rounded text-sm font-bold shadow-md transition flex items-center gap-2 ${
-                          editingCaseId !== null
-                            ? 'bg-amber-600 hover:bg-amber-700'
-                            : 'bg-sky-900 hover:bg-sky-800'
-                        }`}
-                      >
-                        <CheckCircle2 className="w-4 h-4" />{' '}
-                        {editingCaseId !== null
-                          ? `Update Existing Encounter #${editingCaseId} (No Duplicates)`
-                          : 'Save Complete Case (PreparedStatement Transaction)'}
-                      </button>
+
+                      {isReceptionist ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded">
+                            🔒 Clinical submission restricted to Clinicians (Read-Only)
+                          </span>
+                          <button
+                            type="button"
+                            disabled
+                            className="px-6 py-2.5 bg-slate-200 text-slate-500 rounded text-sm font-bold shadow-xs cursor-not-allowed flex items-center gap-2"
+                            title="Receptionists can view records but cannot modify clinical examinations, diagnoses, or prescriptions."
+                          >
+                            <Lock className="w-4 h-4" /> Save Restricted (Receptionist)
+                          </button>
+                        </div>
+                      ) : isNurse ? (
+                        <button
+                          type="submit"
+                          className="px-6 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-sm font-bold shadow-md transition flex items-center gap-2"
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          {editingCaseId !== null
+                            ? `Update Nursing Observations #${editingCaseId}`
+                            : 'Save Nursing Observations & Vitals'}
+                        </button>
+                      ) : (
+                        <button
+                          type="submit"
+                          className={`px-6 py-2.5 text-white rounded text-sm font-bold shadow-md transition flex items-center gap-2 ${
+                            editingCaseId !== null
+                              ? 'bg-amber-600 hover:bg-amber-700'
+                              : 'bg-sky-900 hover:bg-sky-800'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-4 h-4" />{' '}
+                          {editingCaseId !== null
+                            ? `Update Existing Encounter #${editingCaseId} (No Duplicates)`
+                            : 'Save Complete Case (PreparedStatement Transaction)'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 </form>
@@ -3915,12 +4861,6 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                       className="px-3 py-1.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-xs font-semibold flex items-center gap-1.5 transition"
                     >
                       <Printer className="w-3.5 h-3.5" /> Print Case File
-                    </button>
-                    <button
-                      onClick={() => onSwitchToCode('view/CaseHistoryView.java')}
-                      className="px-2.5 py-1.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded text-xs font-mono transition"
-                    >
-                      CaseHistoryView.java
                     </button>
                   </div>
                 </div>
@@ -4122,11 +5062,17 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => handleStartEditCase(activeCaseRecord.caseId)}
-                              className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 rounded font-bold text-xs flex items-center gap-1.5 transition shadow-2xs"
-                              title="Edit complete clinical encounter (history, vitals, diagnosis, medicines, follow-up)"
+                              className={`px-3 py-1.5 border rounded font-bold text-xs flex items-center gap-1.5 transition shadow-2xs ${
+                                isReceptionist
+                                  ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
+                                  : isNurse
+                                  ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border-emerald-300'
+                                  : 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300'
+                              }`}
+                              title={isReceptionist ? 'View encounter record in read-only mode' : isNurse ? 'Update nursing vitals and observations' : 'Edit complete clinical encounter'}
                             >
-                              <Edit3 className="w-3.5 h-3.5 text-amber-800" />
-                              <span>Edit Encounter Record</span>
+                              {isReceptionist ? <Lock className="w-3.5 h-3.5 text-slate-600" /> : <Edit3 className="w-3.5 h-3.5 text-amber-800" />}
+                              <span>{isReceptionist ? 'View Encounter Details' : isNurse ? 'Update Nursing Vitals' : 'Edit Encounter Record'}</span>
                             </button>
                             <span className="text-xs text-slate-600 bg-slate-100 px-2.5 py-1 rounded">
                               Physician: <span className="font-semibold">{activeCaseRecord.doctorName || 'Dr. Sarah Jenkins'}</span>
@@ -4174,12 +5120,18 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                               <h5 className="text-xs font-bold text-sky-900 uppercase tracking-wide">
                                 Physical Examination (Vitals)
                               </h5>
-                              <button
-                                onClick={() => handleStartEditCase(activeCaseRecord.caseId)}
-                                className="text-[11px] text-amber-800 hover:text-amber-900 font-semibold flex items-center gap-1"
-                              >
-                                <Edit3 className="w-3 h-3" /> Edit Vitals
-                              </button>
+                              {canManageExamination ? (
+                                <button
+                                  onClick={() => handleStartEditCase(activeCaseRecord.caseId)}
+                                  className="text-[11px] text-amber-800 hover:text-amber-900 font-semibold flex items-center gap-1"
+                                >
+                                  <Edit3 className="w-3 h-3" /> Edit Vitals
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-slate-400 font-medium inline-flex items-center gap-1">
+                                  <Lock className="w-3 h-3 text-slate-400" /> Clinician Only
+                                </span>
+                              )}
                             </div>
                             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
                               <div className="bg-slate-50 p-2 rounded">
@@ -4220,12 +5172,18 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                               <h5 className="font-bold text-sky-950 uppercase tracking-wide text-[11px]">
                                 Final Clinical Diagnosis
                               </h5>
-                              <button
-                                onClick={() => handleStartEditCase(activeCaseRecord.caseId)}
-                                className="text-[11px] text-amber-800 hover:text-amber-900 font-semibold flex items-center gap-1"
-                              >
-                                <Edit3 className="w-3 h-3" /> Edit Diagnosis
-                              </button>
+                              {canManageDiagnosis ? (
+                                <button
+                                  onClick={() => handleStartEditCase(activeCaseRecord.caseId)}
+                                  className="text-[11px] text-amber-800 hover:text-amber-900 font-semibold flex items-center gap-1"
+                                >
+                                  <Edit3 className="w-3 h-3" /> Edit Diagnosis
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-slate-400 font-medium inline-flex items-center gap-1">
+                                  <Lock className="w-3 h-3 text-slate-400" /> Doctor Only
+                                </span>
+                              )}
                             </div>
                             <p className="text-slate-900 font-semibold text-sm">{activeDiagRecord.diagnosisText}</p>
                             {activeDiagRecord.doctorNotes && (
@@ -4241,12 +5199,18 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                           <div className="border border-slate-200 rounded overflow-hidden">
                             <div className="px-3 py-2 bg-slate-100 font-bold text-xs text-slate-700 flex items-center justify-between">
                               <span>Prescription Regimen (Rx)</span>
-                              <button
-                                onClick={() => handleStartEditCase(activeCaseRecord.caseId)}
-                                className="text-[11px] text-amber-800 hover:text-amber-900 font-semibold flex items-center gap-1"
-                              >
-                                <Edit3 className="w-3 h-3" /> Edit Prescription & Medicines
-                              </button>
+                              {canManagePrescription ? (
+                                <button
+                                  onClick={() => handleStartEditCase(activeCaseRecord.caseId)}
+                                  className="text-[11px] text-amber-800 hover:text-amber-900 font-semibold flex items-center gap-1"
+                                >
+                                  <Edit3 className="w-3 h-3" /> Edit Prescription & Medicines
+                                </button>
+                              ) : (
+                                <span className="text-[11px] text-slate-400 font-medium inline-flex items-center gap-1">
+                                  <Lock className="w-3 h-3 text-slate-400" /> Doctor Only
+                                </span>
+                              )}
                             </div>
                             <table className="w-full text-left text-xs">
                               <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200 text-[11px]">
@@ -4327,12 +5291,6 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                     >
                       <FileDown className="w-4 h-4" />
                       <span>Download Report (.pdf)</span>
-                    </button>
-                    <button
-                      onClick={() => onSwitchToCode('view/ReportsView.java')}
-                      className="text-xs bg-slate-100 hover:bg-slate-200 border border-slate-300 px-3 py-1.5 rounded text-slate-700 font-mono transition"
-                    >
-                      View ReportsView.java
                     </button>
                   </div>
                 </div>
@@ -4557,12 +5515,6 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                       Live contents of <code>patient_case_db</code> mirroring the exact JDBC PreparedStatement schema
                     </p>
                   </div>
-                  <button
-                    onClick={() => onSwitchToCode('database/schema.sql')}
-                    className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded text-white font-mono transition"
-                  >
-                    View database/schema.sql
-                  </button>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -4702,6 +5654,7 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
                 prescriptions={prescriptions}
                 cases={cases}
                 patients={patients}
+                initialPatientId={selectedPatientId || 'PAT-1001'}
                 onViewCase={(cid) => {
                   const foundCase = cases.find((c) => c.caseId === cid);
                   if (foundCase) {
@@ -5044,6 +5997,379 @@ export const DesktopSimulator: React.FC<Props> = ({ onSwitchToCode }) => {
           </div>
         </div>
       )}
+
+      {/* Global Spotlight Quick Search Modal (Ctrl+K) */}
+      {isSpotlightOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-start justify-center pt-20 p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-300 max-w-xl w-full overflow-hidden">
+            {/* Search Input Bar */}
+            <div className="p-3.5 border-b border-slate-200 flex items-center gap-3 bg-slate-50">
+              <Search className="w-5 h-5 text-sky-600 shrink-0" />
+              <input
+                type="text"
+                autoFocus
+                placeholder="Search patient by name, ID, phone, or search medicine..."
+                value={spotlightQuery}
+                onChange={(e) => setSpotlightQuery(e.target.value)}
+                className="w-full text-sm bg-transparent border-none focus:outline-none text-slate-800 placeholder-slate-400"
+              />
+              <kbd className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 text-[10px] font-mono shrink-0">
+                ESC
+              </kbd>
+            </div>
+
+            {/* Results Body */}
+            <div className="max-h-96 overflow-y-auto p-3 divide-y divide-slate-100 text-xs">
+              {/* Section 1: Matching Patients */}
+              <div className="pb-2">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-2">
+                  Matching Patients
+                </div>
+                {(() => {
+                  const q = spotlightQuery.trim().toLowerCase();
+                  const matched = q
+                    ? patients.filter(
+                        (p) =>
+                          p.name.toLowerCase().includes(q) ||
+                          p.patientId.toLowerCase().includes(q) ||
+                          p.mobile.includes(q) ||
+                          p.bloodGroup.toLowerCase().includes(q)
+                      )
+                    : patients.slice(0, 4);
+
+                  if (matched.length === 0) {
+                    return <p className="text-slate-400 text-xs px-2 py-1">No matching patients found.</p>;
+                  }
+
+                  return (
+                    <div className="space-y-1">
+                      {matched.slice(0, 5).map((p) => (
+                        <div
+                          key={p.patientId}
+                          className="flex items-center justify-between p-2 rounded-lg hover:bg-sky-50/80 transition group"
+                        >
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-7 h-7 rounded-full bg-sky-100 text-sky-800 font-bold flex items-center justify-center text-[10px]">
+                              {p.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                                <span>{p.name}</span>
+                                <span className="font-mono text-[10px] bg-slate-100 text-slate-600 px-1 rounded">
+                                  {p.patientId}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-500">
+                                {p.age}y · {p.gender} · Blood {p.bloodGroup} · {p.mobile}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                setSelectedPatientId(p.patientId);
+                                setCasePatientId(p.patientId);
+                                setActiveModule('new_case');
+                                setIsSpotlightOpen(false);
+                              }}
+                              className="px-2 py-1 rounded bg-sky-100 hover:bg-sky-200 text-sky-800 font-semibold text-[10px] transition"
+                            >
+                              + Case
+                            </button>
+                            <button
+                              onClick={() => {
+                                setSelectedPatientId(p.patientId);
+                                setActiveModule('timeline');
+                                setIsSpotlightOpen(false);
+                              }}
+                              className="px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[10px] transition"
+                            >
+                              Timeline
+                            </button>
+                            <button
+                              onClick={() => {
+                                setEmergencyPatient(p);
+                                setIsSpotlightOpen(false);
+                              }}
+                              className="px-1.5 py-1 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-[10px] transition"
+                            >
+                              <AlertOctagon className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Section 2: Matching Prescribed Medications */}
+              <div className="pt-2">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-2">
+                  Matching Medicines
+                </div>
+                {(() => {
+                  const allMeds: string[] = Array.from(
+                    new Set<string>(prescriptions.flatMap((p) => p.medicines.map((m) => m.medicineName)))
+                  );
+                  const q = spotlightQuery.trim().toLowerCase();
+                  const matchedMeds: string[] = q
+                    ? allMeds.filter((m) => m.toLowerCase().includes(q))
+                    : allMeds.slice(0, 3);
+
+                  if (matchedMeds.length === 0) {
+                    return <p className="text-slate-400 text-xs px-2 py-1">No matching medicines found.</p>;
+                  }
+
+                  return (
+                    <div className="space-y-1">
+                      {matchedMeds.map((med) => (
+                        <div
+                          key={med}
+                          onClick={() => {
+                            setActiveModule('medicines');
+                            setIsSpotlightOpen(false);
+                          }}
+                          className="flex items-center justify-between p-2 rounded-lg hover:bg-sky-50/80 cursor-pointer transition text-slate-800"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Pill className="w-3.5 h-3.5 text-rose-500" />
+                            <span className="font-medium">{med}</span>
+                          </div>
+                          <span className="text-[10px] text-sky-700 group-hover:underline">
+                            Search Prescriptions →
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Section 3: Navigation Shortcuts */}
+              <div className="pt-2">
+                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 px-2">
+                  Quick Navigation
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 px-1">
+                  <button
+                    onClick={() => {
+                      setActiveModule('dashboard');
+                      setIsSpotlightOpen(false);
+                    }}
+                    className="p-1.5 rounded bg-slate-50 hover:bg-slate-100 text-left font-medium text-slate-700 flex items-center gap-1.5 transition"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Dashboard</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveModule('manage');
+                      setIsSpotlightOpen(false);
+                    }}
+                    className="p-1.5 rounded bg-slate-50 hover:bg-slate-100 text-left font-medium text-slate-700 flex items-center gap-1.5 transition"
+                  >
+                    <Users className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Directory</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveModule('register');
+                      setIsSpotlightOpen(false);
+                    }}
+                    className="p-1.5 rounded bg-slate-50 hover:bg-slate-100 text-left font-medium text-slate-700 flex items-center gap-1.5 transition"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>+ Register</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCasePatientId(selectedPatientId || 'PAT-1001');
+                      setActiveModule('new_case');
+                      setIsSpotlightOpen(false);
+                    }}
+                    className="p-1.5 rounded bg-slate-50 hover:bg-slate-100 text-left font-medium text-slate-700 flex items-center gap-1.5 transition"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-sky-600" />
+                    <span>+ New Case</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveModule('wards');
+                      setIsSpotlightOpen(false);
+                    }}
+                    className="p-1.5 rounded bg-slate-50 hover:bg-slate-100 text-left font-medium text-slate-700 flex items-center gap-1.5 transition"
+                  >
+                    <BedIcon className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Wards & Beds</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveModule('medicines');
+                      setIsSpotlightOpen(false);
+                    }}
+                    className="p-1.5 rounded bg-slate-50 hover:bg-slate-100 text-left font-medium text-slate-700 flex items-center gap-1.5 transition"
+                  >
+                    <Pill className="w-3.5 h-3.5 text-rose-500" />
+                    <span>Med Search</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveModule('followups');
+                      setIsSpotlightOpen(false);
+                    }}
+                    className="p-1.5 rounded bg-slate-50 hover:bg-slate-100 text-left font-medium text-slate-700 flex items-center gap-1.5 transition"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Follow-ups</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setActiveModule('audit_log');
+                      setIsSpotlightOpen(false);
+                    }}
+                    className="p-1.5 rounded bg-slate-50 hover:bg-slate-100 text-left font-medium text-slate-700 flex items-center gap-1.5 transition"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Audit Log</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-2.5 bg-slate-50 border-t border-slate-200 text-[10px] text-slate-400 flex items-center justify-between px-4">
+              <span>Press <strong className="text-slate-600 font-mono">Ctrl+K</strong> or <strong className="text-slate-600 font-mono">/</strong> anytime to open search</span>
+              <button
+                onClick={() => setIsSpotlightOpen(false)}
+                className="text-slate-500 hover:text-slate-800"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User Guide & Shortcuts Modal */}
+      {isHelpOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-300 max-w-lg w-full overflow-hidden">
+            <div className="bg-slate-900 text-white px-5 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <HelpCircle className="w-4 h-4 text-sky-400" />
+                <h3 className="font-bold text-sm">System User Guide & Shortcuts</h3>
+              </div>
+              <button
+                onClick={() => setIsHelpOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 text-xs text-slate-700 space-y-4 max-h-[75vh] overflow-y-auto">
+              <div>
+                <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-1.5">
+                  <span>⚡ Keyboard Shortcuts</span>
+                </h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-slate-50 border border-slate-200 rounded flex items-center justify-between">
+                    <span className="font-medium text-slate-800">Quick Global Search</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px] text-slate-600">
+                      Ctrl + K
+                    </kbd>
+                  </div>
+                  <div className="p-2 bg-slate-50 border border-slate-200 rounded flex items-center justify-between">
+                    <span className="font-medium text-slate-800">Close Any Modal</span>
+                    <kbd className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px] text-slate-600">
+                      Esc
+                    </kbd>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-bold text-slate-900 mb-2">📋 Core Clinical Workflows</h4>
+                <div className="space-y-2">
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded">
+                    <div className="font-semibold text-slate-800">1. Recording a Multi-Visit Encounter</div>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      Select or switch to any patient, click <strong>+ Case</strong>, or use <strong>Quick Clinical Templates</strong> to autofill common presentations. Completing all 5 steps commits an atomic multi-table transaction.
+                    </p>
+                  </div>
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded">
+                    <div className="font-semibold text-slate-800">2. Comparing Past Visits Side-by-Side</div>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      Navigate to <strong>Clinical Care → Compare Visits</strong> to see changes in diagnosis, vital signs, and medications between any two encounters.
+                    </p>
+                  </div>
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded">
+                    <div className="font-semibold text-slate-800">3. Inpatient Bed Allocation & Transfers</div>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      In <strong>Wards & Beds</strong>, view live occupancy across General, ICU, and Pediatric wards. Click any available bed to allocate, or transfer between beds instantly.
+                    </p>
+                  </div>
+                  <div className="p-2.5 bg-slate-50 border border-slate-200 rounded">
+                    <div className="font-semibold text-slate-800">4. Pharmacovigilance & Medicine Search</div>
+                    <p className="text-slate-500 text-[11px] mt-0.5">
+                      In <strong>Clinical Care → Medicine-wise Search</strong>, type any partial medicine name (e.g., "Para") to cross-reference every patient who was prescribed that drug.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-bold text-slate-900 mb-1">🛡️ Role-Based Access Control (RBAC)</h4>
+                <p className="text-slate-500 text-[11px]">
+                  Use the <strong>Switch Staff Role</strong> dropdown in the top right to test different clinical permissions: Doctor (full clinical authority), Nurse (vitals & bedside care), Receptionist (front-desk & registration), Admin (audit & system management).
+                </p>
+              </div>
+            </div>
+
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                onClick={() => setIsHelpOpen(false)}
+                className="px-4 py-1.5 bg-sky-800 hover:bg-sky-900 text-white rounded text-xs font-bold transition"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* User-Friendly Floating Toast Notifications */}
+      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none">
+        {toasts.map((toast) => (
+          <div
+            key={toast.id}
+            className={`pointer-events-auto px-4 py-3 rounded-lg shadow-xl border text-xs flex items-center justify-between gap-3 animate-in slide-in-from-bottom-2 duration-200 ${
+              toast.type === 'success'
+                ? 'bg-emerald-950/95 text-emerald-100 border-emerald-600/80 shadow-emerald-950/20'
+                : toast.type === 'warning'
+                ? 'bg-amber-950/95 text-amber-100 border-amber-600/80 shadow-amber-950/20'
+                : toast.type === 'error'
+                ? 'bg-rose-950/95 text-rose-100 border-rose-600/80 shadow-rose-950/20'
+                : 'bg-slate-900/95 text-slate-100 border-slate-700 shadow-slate-950/20'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />}
+              {toast.type === 'warning' && <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />}
+              {toast.type === 'error' && <AlertOctagon className="w-4 h-4 text-rose-400 shrink-0" />}
+              {toast.type === 'info' && <Info className="w-4 h-4 text-sky-400 shrink-0" />}
+              <span className="font-medium">{toast.message}</span>
+            </div>
+            <button
+              onClick={() => dismissToast(toast.id)}
+              className="text-slate-400 hover:text-white p-0.5 rounded transition"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

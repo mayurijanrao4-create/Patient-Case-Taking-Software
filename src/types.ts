@@ -1,9 +1,11 @@
+export type UserRole = 'Doctor' | 'Nurse' | 'Receptionist' | 'Admin';
+
 export interface User {
   userId: number;
   username: string;
   password?: string;
   fullName: string;
-  role: 'Admin' | 'Doctor';
+  role: UserRole;
   email: string;
 }
 

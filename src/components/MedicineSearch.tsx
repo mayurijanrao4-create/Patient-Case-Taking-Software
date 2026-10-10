@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Prescription, Patient, CaseHistory } from '../types';
 import {
   Pill,
@@ -18,6 +18,7 @@ interface Props {
   prescriptions: Prescription[];
   cases: CaseHistory[];
   patients: Patient[];
+  initialPatientId?: string;
   onViewCase?: (caseId: number) => void;
   onViewPatientTimeline?: (patientId: string) => void;
 }
@@ -26,12 +27,19 @@ export const MedicineSearch: React.FC<Props> = ({
   prescriptions,
   cases,
   patients,
+  initialPatientId,
   onViewCase,
   onViewPatientTimeline
 }) => {
   const [activeMode, setActiveMode] = useState<'medicine_search' | 'patient_history'>('medicine_search');
   const [searchTerm, setSearchTerm] = useState('Paracetamol');
-  const [selectedPatientId, setSelectedPatientId] = useState('PAT-1001');
+  const [selectedPatientId, setSelectedPatientId] = useState(initialPatientId || 'PAT-1001');
+
+  useEffect(() => {
+    if (initialPatientId && initialPatientId !== selectedPatientId) {
+      setSelectedPatientId(initialPatientId);
+    }
+  }, [initialPatientId]);
 
   // Flatten all medicine items with case and patient metadata
   const allPrescriptionItems = prescriptions.flatMap((p) => {

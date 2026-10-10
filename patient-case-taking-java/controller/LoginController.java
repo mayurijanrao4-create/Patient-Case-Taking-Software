@@ -19,7 +19,20 @@ public class LoginController {
         this.userDAO = new UserDAO();
     }
 
+    public LoginController(view.LoginFrame frame) {
+        this();
+        frame.getBtnLogin().addActionListener(e -> {
+            String role = frame.getSelectedRole();
+            handleLogin(frame.getUsername(), frame.getPassword(), role, frame);
+        });
+        frame.getBtnReset().addActionListener(e -> frame.clearFields());
+    }
+
     public boolean handleLogin(String username, String password, JFrame currentFrame) {
+        return handleLogin(username, password, null, currentFrame);
+    }
+
+    public boolean handleLogin(String username, String password, String selectedRole, JFrame currentFrame) {
         if (username == null || username.trim().isEmpty()) {
             JOptionPane.showMessageDialog(currentFrame, "Please enter your username.", "Validation Error", JOptionPane.WARNING_MESSAGE);
             return false;
@@ -31,6 +44,16 @@ public class LoginController {
 
         User user = userDAO.authenticate(username.trim(), password.trim());
         if (user != null) {
+            // Verify selected role matches or update session role
+            if (selectedRole != null && !selectedRole.trim().isEmpty()) {
+                if (!selectedRole.equalsIgnoreCase(user.getRole())) {
+                    JOptionPane.showMessageDialog(currentFrame, 
+                        "Role verification failed: User '" + user.getUsername() + "' is configured as " + user.getRole() + ", but " + selectedRole + " was selected.", 
+                        "Role Mismatch", JOptionPane.WARNING_MESSAGE);
+                    return false;
+                }
+            }
+
             JOptionPane.showMessageDialog(currentFrame, "Welcome, " + user.getFullName() + " (" + user.getRole() + ")", "Login Successful", JOptionPane.INFORMATION_MESSAGE);
             currentFrame.dispose();
 

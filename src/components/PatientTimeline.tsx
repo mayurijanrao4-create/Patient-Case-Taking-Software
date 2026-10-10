@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Patient, CaseHistory, Examination, Diagnosis, Prescription, FollowUp } from '../types';
 import {
   Clock,
@@ -49,6 +49,12 @@ export const PatientTimeline: React.FC<Props> = ({
   const [expandedCases, setExpandedCases] = useState<Record<number, boolean>>({});
   const [dateFilterStart, setDateFilterStart] = useState('');
   const [dateFilterEnd, setDateFilterEnd] = useState('');
+
+  useEffect(() => {
+    if (selectedPatientId && selectedPatientId !== currentPatientId) {
+      setCurrentPatientId(selectedPatientId);
+    }
+  }, [selectedPatientId]);
 
   // Selected patient
   const patient = patients.find(

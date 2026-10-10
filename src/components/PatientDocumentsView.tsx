@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { PatientDocument, Patient } from '../types';
 import { generateSingleDocumentPdf } from '../utils/pdfGenerator';
 import {
@@ -35,6 +35,12 @@ export const PatientDocumentsView: React.FC<Props> = ({
   const [currentPatientId, setCurrentPatientId] = useState<string>(selectedPatientId || 'PAT-1001');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  useEffect(() => {
+    if (selectedPatientId && selectedPatientId !== currentPatientId) {
+      setCurrentPatientId(selectedPatientId);
+    }
+  }, [selectedPatientId]);
 
   // Upload Modal State
   const [isUploadOpen, setIsUploadOpen] = useState(false);

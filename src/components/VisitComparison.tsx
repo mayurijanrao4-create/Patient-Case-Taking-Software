@@ -63,6 +63,12 @@ export const VisitComparison: React.FC<Props> = ({
   const [caseIdB, setCaseIdB] = useState<number | ''>('');
 
   useEffect(() => {
+    if (initialPatientId && initialPatientId !== selectedPatientId) {
+      setSelectedPatientId(initialPatientId);
+    }
+  }, [initialPatientId]);
+
+  useEffect(() => {
     if (patientVisits.length >= 2) {
       // Default: compare penultimate with latest visit
       const vA = initialCaseId1 || patientVisits[patientVisits.length - 2].caseId;
@@ -73,7 +79,7 @@ export const VisitComparison: React.FC<Props> = ({
       setCaseIdA(patientVisits[0].caseId);
       setCaseIdB(patientVisits[0].caseId);
     }
-  }, [selectedPatientId]);
+  }, [selectedPatientId, patientVisits.length]);
 
   const visitA = cases.find((c) => c.caseId === caseIdA);
   const examA = visitA ? examinations.find((e) => e.caseId === visitA.caseId) : undefined;

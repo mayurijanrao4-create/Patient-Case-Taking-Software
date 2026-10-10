@@ -35,14 +35,14 @@ CREATE TABLE users (
     username VARCHAR(50) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
-    role ENUM('Admin', 'Doctor') NOT NULL DEFAULT 'Doctor',
+    role ENUM('Admin', 'Doctor', 'Nurse', 'Receptionist') NOT NULL DEFAULT 'Doctor',
     email VARCHAR(100) NOT NULL UNIQUE,
     specialization VARCHAR(100) DEFAULT 'General Physician',
     phone VARCHAR(15),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_user_username (username),
     INDEX idx_user_role (role)
-) ENGINE=InnoDB COMMENT='Stores doctor and administrator authentication credentials';
+) ENGINE=InnoDB COMMENT='Stores user credentials and role-based permissions (Doctor, Nurse, Receptionist, Admin)';
 
 -- 2. PATIENT TABLE (Master Demographic Record of Outpatients)
 CREATE TABLE patients (
@@ -173,6 +173,8 @@ CREATE TABLE follow_ups (
 INSERT INTO users (username, password, full_name, role, email, specialization, phone) VALUES
 ('admin', 'admin123', 'Hospital Admin', 'Admin', 'admin@hospital.org', 'Hospital Administration', '9876543210'),
 ('doctor', 'doctor123', 'Dr. Sarah Jenkins, M.D.', 'Doctor', 'dr.sarah@hospital.org', 'Internal Medicine', '9876543211'),
+('nurse', 'nurse123', 'Nurse Mary Davis, R.N.', 'Nurse', 'nurse.mary@hospital.org', 'Triage & Inpatient Nursing Care', '9876543214'),
+('receptionist', 'recep123', 'Receptionist David Miller', 'Receptionist', 'recep.david@hospital.org', 'Front-Desk & Patient Registration', '9876543215'),
 ('dr_kumar', 'doctor123', 'Dr. Rajesh Kumar, M.B.B.S.', 'Doctor', 'dr.kumar@hospital.org', 'General Physician', '9876543212');
 
 INSERT INTO patients (patient_id, name, age, gender, mobile, address, blood_group, registered_date) VALUES
@@ -302,18 +304,18 @@ public class DBConnection {
     path: 'model/User.java',
     name: 'User.java',
     category: 'model',
-    description: 'Encapsulates user entity for authentication and role-based permissions (Admin / Doctor).',
+    description: 'Encapsulates user entity for authentication and role-based permissions (Doctor / Nurse / Receptionist / Admin).',
     code: `package model;
 
 /**
- * Model class representing a User in the system (Admin or Doctor).
+ * Model class representing a User in the system (Doctor, Nurse, Receptionist, Admin).
  */
 public class User {
     private int userId;
     private String username;
     private String password;
     private String fullName;
-    private String role; // "Admin" or "Doctor"
+    private String role; // "Doctor", "Nurse", "Receptionist", "Admin"
     private String email;
 
     public User() {}
@@ -345,6 +347,22 @@ public class User {
 
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+
+    public boolean isDoctor() {
+        return "Doctor".equalsIgnoreCase(role) || "Admin".equalsIgnoreCase(role);
+    }
+
+    public boolean isNurse() {
+        return "Nurse".equalsIgnoreCase(role);
+    }
+
+    public boolean isReceptionist() {
+        return "Receptionist".equalsIgnoreCase(role);
+    }
+
+    public boolean isAdmin() {
+        return "Admin".equalsIgnoreCase(role);
+    }
 
     @Override
     public String toString() {
@@ -1421,7 +1439,40 @@ public class AuthController {
     }
 
     public static boolean isDoctor() {
-        return currentUser != null && "Doctor".equalsIgnoreCase(currentUser.getRole());
+        return currentUser != null && ("Doctor".equalsIgnoreCase(currentUser.getRole()) || "Admin".equalsIgnoreCase(currentUser.getRole()));
+    }
+
+    public static boolean isNurse() {
+        return currentUser != null && "Nurse".equalsIgnoreCase(currentUser.getRole());
+    }
+
+    public static boolean isReceptionist() {
+        return currentUser != null && "Receptionist".equalsIgnoreCase(currentUser.getRole());
+    }
+
+    // Role-Based Access Control (RBAC) Permission Queries:
+    public static boolean canManageClinicalRecords() {
+        return isDoctor();
+    }
+
+    public static boolean canManageExamination() {
+        return isDoctor() || isNurse();
+    }
+
+    public static boolean canManageDiagnosis() {
+        return isDoctor();
+    }
+
+    public static boolean canManagePrescriptions() {
+        return isDoctor();
+    }
+
+    public static boolean canManageRegistration() {
+        return isReceptionist() || isDoctor();
+    }
+
+    public static boolean canManageFollowUpSchedule() {
+        return isDoctor() || isReceptionist() || isNurse();
     }
 }
 `
@@ -1715,11 +1766,11 @@ public class LoginView extends JFrame {
         txtPassword.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         pnlCenter.add(txtPassword, gbc);
 
-        // Role Dropdown
+        // Role Dropdown (Doctor, Nurse, Receptionist, Admin)
         gbc.gridx = 0; gbc.gridy = 2;
         pnlCenter.add(new JLabel("Role:"), gbc);
         gbc.gridx = 1;
-        cmbRole = new JComboBox<>(new String[]{"Doctor", "Admin"});
+        cmbRole = new JComboBox<>(new String[]{"Doctor", "Nurse", "Receptionist", "Admin"});
         cmbRole.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         pnlCenter.add(cmbRole, gbc);
 
@@ -2373,6 +2424,63 @@ public class CaseTakingView extends JFrame {
         setLayout(new BorderLayout());
         add(tabbedPane, BorderLayout.CENTER);
         add(pnlBottom, BorderLayout.SOUTH);
+
+        // Apply RBAC permissions based on logged-in user role
+        applyRolePermissions();
+    }
+
+    /**
+     * Enforces Role-Based Access Control (RBAC) on clinical case-taking form fields.
+     * Doctor: Full access to Examination, Diagnosis, Prescriptions, Follow-up.
+     * Nurse: View relevant info; edit/update Physical Examination & Vitals; Diagnosis & Prescriptions are READ-ONLY.
+     * Receptionist: Manage registration/follow-up; Clinical Examination, Diagnosis and Prescriptions are READ-ONLY.
+     */
+    private void applyRolePermissions() {
+        boolean isDoctor = AuthController.isDoctor();
+        boolean isNurse = AuthController.isNurse();
+        boolean isReceptionist = AuthController.isReceptionist();
+
+        if (isReceptionist) {
+            // Receptionist cannot edit clinical examination, diagnosis, or prescriptions
+            txtTemp.setEditable(false);
+            txtBP.setEditable(false);
+            txtPulse.setEditable(false);
+            txtWeight.setEditable(false);
+            txtHeight.setEditable(false);
+            txtObservation.setEditable(false);
+
+            txtDiagnosis.setEditable(false);
+            txtDiagnosis.setBackground(new Color(245, 245, 245));
+            txtDoctorNotes.setEditable(false);
+            txtDoctorNotes.setBackground(new Color(245, 245, 245));
+
+            btnAddMed.setEnabled(false);
+            btnRemoveMed.setEnabled(false);
+            btnSaveCompleteCase.setEnabled(false);
+            btnSaveCompleteCase.setToolTipText("Receptionist: Clinical case editing restricted to Doctor and Nurse.");
+        } else if (isNurse) {
+            // Nurse CAN enter/update Physical Examination vitals & nursing observations
+            txtTemp.setEditable(true);
+            txtBP.setEditable(true);
+            txtPulse.setEditable(true);
+            txtWeight.setEditable(true);
+            txtHeight.setEditable(true);
+            txtObservation.setEditable(true);
+
+            // Nurse CANNOT edit Doctor-only Diagnosis
+            txtDiagnosis.setEditable(false);
+            txtDiagnosis.setBackground(new Color(245, 245, 245));
+            txtDiagnosis.setToolTipText("Doctor-Only: Diagnosis is read-only for Nurse.");
+            txtDoctorNotes.setEditable(false);
+            txtDoctorNotes.setBackground(new Color(245, 245, 245));
+
+            // Nurse CANNOT edit Doctor-only Prescriptions
+            btnAddMed.setEnabled(false);
+            btnAddMed.setToolTipText("Doctor-Only: Prescriptions are read-only for Nurse.");
+            btnRemoveMed.setEnabled(false);
+
+            btnSaveCompleteCase.setText("Update Nursing Vitals & Observations");
+        }
     }
 
     private JPanel createSymptomsPanel() {

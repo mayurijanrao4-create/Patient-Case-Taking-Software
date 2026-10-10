@@ -23,14 +23,14 @@ CREATE TABLE users (
     username VARCHAR(50) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
     full_name VARCHAR(100) NOT NULL,
-    role ENUM('Admin', 'Doctor') NOT NULL DEFAULT 'Doctor',
+    role ENUM('Admin', 'Doctor', 'Nurse', 'Receptionist') NOT NULL DEFAULT 'Doctor',
     email VARCHAR(100) NOT NULL UNIQUE,
     specialization VARCHAR(100) DEFAULT 'General Physician',
     phone VARCHAR(15),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_user_username (username),
     INDEX idx_user_role (role)
-) ENGINE=InnoDB COMMENT='Stores doctor and administrator authentication credentials';
+) ENGINE=InnoDB COMMENT='Stores hospital staff credentials: Doctor, Nurse, Receptionist, Admin';
 
 -- ----------------------------------------------------------------------------
 -- ENTITY 2: Patient (Master Demographic Record of Outpatients)
@@ -172,11 +172,13 @@ CREATE TABLE follow_ups (
 -- 3. SAMPLE DATA INSERTION (REALISTIC CLINICAL TEST DATA)
 -- ============================================================================
 
--- Insert Users (Administrators & Doctors)
+-- Insert Users (Administrators, Doctors, Nurses & Receptionists)
 INSERT INTO users (username, password, full_name, role, email, specialization, phone) VALUES
 ('admin', 'admin123', 'Hospital Admin', 'Admin', 'admin@hospital.org', 'Hospital Administration', '9876543210'),
 ('doctor', 'doctor123', 'Dr. Sarah Jenkins, M.D.', 'Doctor', 'dr.sarah@hospital.org', 'Internal Medicine', '9876543211'),
-('dr_kumar', 'doctor123', 'Dr. Rajesh Kumar, M.B.B.S.', 'Doctor', 'dr.kumar@hospital.org', 'General Physician', '9876543212');
+('dr_kumar', 'doctor123', 'Dr. Rajesh Kumar, M.B.B.S.', 'Doctor', 'dr.kumar@hospital.org', 'General Physician', '9876543212'),
+('nurse', 'nurse123', 'Nurse Mary Davis, RN', 'Nurse', 'nurse.mary@hospital.org', 'Head Inpatient Nurse', '9876543213'),
+('receptionist', 'recep123', 'David Miller', 'Receptionist', 'recep.david@hospital.org', 'Front Desk & Registration', '9876543214');
 
 -- Insert Patients
 INSERT INTO patients (patient_id, name, age, gender, mobile, address, blood_group, registered_date) VALUES
